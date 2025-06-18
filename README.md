@@ -2,6 +2,8 @@
 1. Setup a virtual environment. (仮想環境をセットアップします。)
 ```
 python3 -m venv venv
+
+source venv/bin/activate
 ```
 2. Install requirements.(必要なパッケージをインストールします。)
 
