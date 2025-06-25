@@ -1,6 +1,7 @@
 from utils.chataudioclient import ChatAudioClient
 from pynput import keyboard
-
+from dotenv import load_dotenv
+import os
 """
 Example audio chat bot.
 We implement our UI and higher-level logic in subclasses derived from ChatAudioClient.
@@ -13,15 +14,15 @@ ChatAudioClient を継承したクラスで UI や上位レベルのロジック
 ここに自由に処理を実装でき、デモでは RAG ロジックを記述しています。
 """
 class TerminalAudioChatBot(ChatAudioClient):
-    def __init__(self):
-        super().__init__()
+    def __init__(self,api_key, system_instruction=""):
+        super().__init__(api_key,system_instruction=system_instruction)
         # Define any additional instance variables here
         # 必要に応じてここにインスタンス変数を追加してください
     
     # override the processing
-    def process_user_input(self):
-        super().process_user_input()
+    async def process_user_input(self, pcm_bytes,session):
         print("Processing in terminal audio chat bot...")
+        return await super().process_user_input(pcm_bytes,session)
 
     def run(self):
         super().run()
@@ -55,6 +56,8 @@ class TerminalAudioChatBot(ChatAudioClient):
             listener.join()
 
 if __name__ == "__main__":
-    app = TerminalAudioChatBot()
+    load_dotenv()
+    GEMINI_API_KEY=os.getenv("GEMINI_API_KEY")
+    app = TerminalAudioChatBot(GEMINI_API_KEY)
     app.run()
 

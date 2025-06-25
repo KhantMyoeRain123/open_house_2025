@@ -1,101 +1,131 @@
 import sounddevice as sd
-from scipy.io.wavfile import write
 import numpy as np
 import threading
 import time
+import io
 import os
+import wave
+import asyncio
+import soundfile as sf
+from google import genai
+from google.genai import types
 
-"""
-    Handles audio capturing and output.
-    Implements a chained architecture to enable functionalities like Retrieval-Augmented Generation (RAG).
-    
-    Flow: speech to text -> text -> text to speech
-    
-    音声の入力と出力を処理します。
-    Retrieval-Augmented Generation（RAG）などの高度な機能をサポートするために
-    チェーン形式のアーキテクチャを使用しています。
 
-    処理の流れ：音声 → テキスト → テキスト処理 → 音声合成
-"""
 class ChatAudioClient:
-    def __init__(self):
+    def __init__(self, api_key, system_instruction="You are a helpful assistant and answer in a friendly tone."):
+        self.client = genai.Client(api_key=api_key)
+        self.model = "gemini-2.5-flash-preview-native-audio-dialog"
+        self.config = {
+            "response_modalities": ["AUDIO"],
+            "system_instruction": system_instruction,
+            "realtime_input_config": {"automatic_activity_detection": {"disabled": True}},
+        }
+
         self.running = True
-        self.conversation_state = []
+        self.conversation_history = []
 
         self.audio_buffer = []
         self.is_recording = False
+        self.is_listening=False
         self.record_event = threading.Event()
 
         # Audio settings
-        # サンプルレート、チャンネル数、データ型を設定
         self.sample_rate = 16000
         self.channels = 1
-        self.dtype = 'float32'
+        self.dtype = 'int16'  # Native format for Gemini input (16-bit PCM)
+        os.makedirs("tmp", exist_ok=True)
 
     def start_recording(self):
-        # Starts the audio recording if not already recording
-        # 録音が開始されていなければ、録音を開始する
-        if not self.is_recording:
+        if not self.is_recording and self.is_listening:
             self.record_event.set()
             self.is_recording = True
-            print("Recording started.")  # 録音開始
+            print("🔴 Recording started.")
 
     def stop_recording(self):
-        # Stops the audio recording if it is currently recording
-        # 録音中であれば録音を停止する
         if self.is_recording:
             self.record_event.clear()
             self.is_recording = False
-            print("Recording stopped.")  # 録音停止
+            print("🛑 Recording stopped.")
 
     def listen_to_user(self):
-        # Waits for signal to start recording, captures audio input into buffer, and saves as WAV file
-        # 録音開始の合図を待ち、音声をバッファに保存し、WAVファイルとして保存する
         self.record_event.clear()
-        print("Listening...")  # リスニング開始
-        self.record_event.wait()  # 録音開始のシグナルを待つ
+        print("👂 Waiting to record...")
+        self.is_listening=True
+        self.record_event.wait()
         self.audio_buffer.clear()
 
-        with sd.InputStream(samplerate=self.sample_rate,
-                            channels=self.channels,
-                            dtype=self.dtype) as stream:
+        with sd.InputStream(samplerate=self.sample_rate, channels=self.channels, dtype=self.dtype) as stream:
             while self.record_event.is_set():
                 data, _ = stream.read(1024)
                 self.audio_buffer.append(data)
-                time.sleep(0.01)  # 他のスレッドが実行できるように少し待機
+                time.sleep(0.01)
 
-            print(f"Captured {len(self.audio_buffer)} chunks of audio.")  # 音声チャンク数を表示
-            audio = np.concatenate(self.audio_buffer, axis=0)
-            os.makedirs("tmp", exist_ok=True)
-            write("tmp/user.wav", self.sample_rate, audio)
-            print("Saved as user.wav")  # ファイル保存完了
+        print(f"🎙️ Captured {len(self.audio_buffer)} chunks.")
+        audio = np.concatenate(self.audio_buffer, axis=0)
+        self.is_listening=False
+        # Save a copy for debugging
+        wav_path = "tmp/user.wav"
+        with wave.open(wav_path, 'wb') as wf:
+            wf.setnchannels(self.channels)
+            wf.setsampwidth(2)  # 16-bit PCM = 2 bytes
+            wf.setframerate(self.sample_rate)
+            wf.writeframes(audio.tobytes())
+        print(f"💾 Saved to {wav_path}")
 
-        # TODO: transcribe and add to conversation_state
-        # TODO: 音声を文字起こしして会話状態に追加する処理を実装
+        # Return raw bytes directly
+        return audio.tobytes()
 
-    def process_user_input(self):
-        # Processes the user's text input; place to implement RAG logic or other NLP processing
-        # ユーザー入力のテキストを処理する。RAGなどのロジックをここに実装する
-        pass
+    async def process_user_input(self, pcm_bytes, session):
+        await session.send_realtime_input(activity_start=types.ActivityStart())
+        await session.send_realtime_input(
+        audio=types.Blob(data=pcm_bytes, mime_type="audio/pcm;rate=16000")
+        )
+        await session.send_realtime_input(activity_end=types.ActivityEnd())
 
-    def play_output(self):
-        # Plays the output audio back to the user, e.g. synthesized speech from LLM output
-        # LLMの出力音声などを再生する
-        pass
+        print("Sent user audio...")
+        
+        output_path = "tmp/response.wav"
+        wf = wave.open(output_path, "wb")
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(24000)  # Gemini always outputs 24kHz
+
+        async for response in session.receive():
+            if response.data is not None:
+                wf.writeframes(response.data)
+        print("Written user audio...")
+        
+        wf.close()
+        
+        
+        return output_path
+
+    def play_output(self, wav_path):
+        print("🔊 Playing response...")
+
+        # Load entire audio file into memory
+        with sf.SoundFile(wav_path, 'r') as f:
+            data = f.read(dtype='int16')  # Or 'float32' if your output is normalized
+            samplerate = f.samplerate
+
+        # Play it in full, blocking until complete
+        sd.play(data, samplerate)
+        sd.wait()
+
+        print("✅ Playback finished.")
+
+
+    async def _loop(self):
+        async with self.client.aio.live.connect(model=self.model, config=self.config) as session:
+            while self.running:
+                print("🟢 Chat audio client running.")
+                pcm_bytes = self.listen_to_user()
+                response_path = await self.process_user_input(pcm_bytes, session)
+                self.play_output(response_path)    
 
     def loop(self):
-        # Main loop: listens, processes input, and plays output repeatedly while running
-        # メインループ：動作中は音声を聞き、入力を処理し、出力を再生し続ける
-        while self.running:
-            print("Chat audio client is running...")  # クライアント動作中
-            self.listen_to_user()
-            self.process_user_input()
-            self.play_output()
+        asyncio.run(self._loop())
 
     def run(self):
-        # Starts the main loop in a separate daemon thread
-        # メインループを別スレッドでデーモンとして起動する
         thread = threading.Thread(target=self.loop, daemon=True)
         thread.start()
-
-
