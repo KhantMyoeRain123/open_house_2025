@@ -36,8 +36,11 @@ class ChatUI(QtWidgets.QWidget):
 class ClubRecommendationBot(ChatAudioClient):
     def __init__(self,api_key, system_instruction=""):
         super().__init__(api_key,system_instruction=system_instruction)
+        self.club_data=self.read_json_club_data("./data")
         
-        
+    def read_json_club_data(self,path):
+        pass
+    
     def run(self):
         super().run()
         app = QtWidgets.QApplication([])
