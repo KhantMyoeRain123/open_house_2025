@@ -23,6 +23,8 @@ Start by reading ```utils/chataudioclient.py``` and then read ```exampleclient.p
 
 (まず `utils/chataudioclient.py` を読み、次に `exampleclient.py` を読みます。)
 
+The main application is found under the folder `app` in the file `main.py`.
+
 
 
 

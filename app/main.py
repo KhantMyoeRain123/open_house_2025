@@ -13,7 +13,7 @@ class ChatUI(QtWidgets.QWidget):
         self.chatbot=chatbot
 
 
-        self.button = QtWidgets.QPushButton("Record!")
+        self.button = QtWidgets.QPushButton("話す!")
         self.text = QtWidgets.QLabel("こんにちは！",alignment=QtCore.Qt.AlignCenter)
 
         self.layout = QtWidgets.QVBoxLayout(self)
@@ -26,8 +26,10 @@ class ChatUI(QtWidgets.QWidget):
     def record_voice(self):
         if not self.chatbot.is_recording:
             self.chatbot.start_recording()
+            self.button.setText("止める！")
         else:
             self.chatbot.stop_recording()
+            self.button.setText("話す!")
 
 
 
