@@ -21,6 +21,7 @@ class ChatUI(QtWidgets.QWidget):
         self.layout.addWidget(self.button)
 
         self.button.clicked.connect(self.record_voice)
+        
 
     @QtCore.Slot()
     def record_voice(self):
@@ -31,15 +32,33 @@ class ChatUI(QtWidgets.QWidget):
             self.chatbot.stop_recording()
             self.button.setText("話す!")
 
+class ClubRecommendationTools:
+    search_clubs_tool={
+        "name":"search_clubs_tool",
+        "description":"Search the most appropriate clubs for the student.",
+    }
+    
+    tools=[search_clubs_tool]
+    
+    @staticmethod
+    def search_clubs():
+        print("Searching clubs...")
+    
+    
 
 
 class ClubRecommendationBot(ChatAudioClient):
-    def __init__(self,api_key, system_instruction=""):
-        super().__init__(api_key,system_instruction=system_instruction)
+    def __init__(self,api_key, tools=[],system_instruction=""):
+        super().__init__(api_key,tools=tools,system_instruction=system_instruction)
         self.club_data=self.read_json_club_data("./data")
         
     def read_json_club_data(self,path):
         pass
+    
+    def call_tool(self,tool_name,tool_args):
+        if tool_name=="search_clubs_tool":
+            ClubRecommendationTools.search_clubs()
+        
     
     def run(self):
         super().run()
@@ -55,7 +74,23 @@ class ClubRecommendationBot(ChatAudioClient):
 if __name__=="__main__":
     load_dotenv()
     GEMINI_API_KEY=os.getenv("GEMINI_API_KEY")
-    app = ClubRecommendationBot(GEMINI_API_KEY)
+    
+    system_instruction="""
+        You are a helpful AI assistant whose job is to recommend clubs to high school students. Your goal is to guide students toward clubs they will enjoy and benefit from. To do this effectively:
+
+            1. Ask the student a series of FIVE thoughtful and open-ended questions to understand their personality, interests, goals, and schedule.
+
+            2. Questions should cover topics such as hobbies, academic interests, career aspirations, and availability.
+
+            3. Use a friendly and engaging tone appropriate for a high school setting.
+
+            4. After the user responds to the last question, ask them if it's okay for you to start searching the most appropriate club for them. 
+            
+            5. After the user confirms, call the search_clubs_tool.
+
+        Begin by introducing yourself and asking your first question to get to know the student.
+    """
+    app = ClubRecommendationBot(GEMINI_API_KEY,tools=ClubRecommendationTools.tools,system_instruction=system_instruction)
     app.run()
     
     

@@ -12,13 +12,16 @@ from google.genai import types
 
 
 class ChatAudioClient:
-    def __init__(self, api_key, system_instruction="You are a helpful assistant and answer in a friendly tone."):
+    def __init__(self, api_key, tools=[], system_instruction="You are a helpful assistant and answer in a friendly tone."):
         self.client = genai.Client(api_key=api_key)
         self.model = "gemini-2.5-flash-preview-native-audio-dialog"
+        self.tools=[{"function_declarations": tools}]
+        
         self.config = {
             "response_modalities": ["AUDIO"],
             "system_instruction": system_instruction,
             "realtime_input_config": {"automatic_activity_detection": {"disabled": True}},
+            "tools":self.tools
         }
 
         self.running = True
@@ -74,6 +77,11 @@ class ChatAudioClient:
 
         # Return raw bytes directly
         return audio.tobytes()
+    
+    
+    # override this if you have tools 
+    def call_tool(self,tool_name,tool_args):
+        pass
 
     async def process_user_input(self, pcm_bytes, session):
         await session.send_realtime_input(activity_start=types.ActivityStart())
@@ -84,16 +92,33 @@ class ChatAudioClient:
 
         print("Sent user audio...")
         
+        
+        
         output_path = "tmp/response.wav"
         wf = wave.open(output_path, "wb")
         wf.setnchannels(1)
         wf.setsampwidth(2)
         wf.setframerate(24000)  # Gemini always outputs 24kHz
+        
 
         async for response in session.receive():
-            if response.data is not None:
-                wf.writeframes(response.data)
-        print("Written user audio...")
+            if response.server_content:
+                if response.data is not None:
+                    wf.writeframes(response.data)
+            elif response.tool_call:
+                function_responses = []
+                for fc in response.tool_call.function_calls:
+                    self.call_tool(fc.name,fc.args)
+                    function_response = types.FunctionResponse(
+                        id=fc.id,
+                        name=fc.name,
+                        response={ "result": "Say hello three times back to the user!" } # simple, hard-coded function response
+                    )
+                    function_responses.append(function_response)
+
+                await session.send_tool_response(function_responses=function_responses)
+                
+        print("Written response audio...")
         
         wf.close()
         
@@ -103,10 +128,7 @@ class ChatAudioClient:
     def play_output(self, wav_path):
         print("🔊 Playing response...")
 
-        # Load entire audio file into memory
-        with sf.SoundFile(wav_path, 'r') as f:
-            data = f.read(dtype='int16')  # Or 'float32' if your output is normalized
-            samplerate = f.samplerate
+        data, samplerate=sf.read(wav_path)
 
         # Play it in full, blocking until complete
         sd.play(data, samplerate)
