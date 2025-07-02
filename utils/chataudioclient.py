@@ -14,14 +14,17 @@ from google.genai import types
 class ChatAudioClient:
     def __init__(self, api_key, tools=[], system_instruction="You are a helpful assistant and answer in a friendly tone."):
         self.client = genai.Client(api_key=api_key)
-        self.model = "gemini-2.5-flash-preview-native-audio-dialog"
+        self.model = "gemini-live-2.5-flash-preview"
         self.tools=[{"function_declarations": tools}]
         
         self.config = {
             "response_modalities": ["AUDIO"],
             "system_instruction": system_instruction,
             "realtime_input_config": {"automatic_activity_detection": {"disabled": True}},
-            "tools":self.tools
+            "tools":self.tools,
+            "speech_config": {
+            "language_code": "ja-JP"
+            }
         }
 
         self.running = True
@@ -37,6 +40,8 @@ class ChatAudioClient:
         self.channels = 1
         self.dtype = 'int16'  # Native format for Gemini input (16-bit PCM)
         os.makedirs("tmp", exist_ok=True)
+        
+        
 
     def start_recording(self):
         if not self.is_recording and self.is_listening:
@@ -94,17 +99,18 @@ class ChatAudioClient:
         
         
         
-        output_path = "tmp/response.wav"
+        '''output_path = "tmp/response.wav"
         wf = wave.open(output_path, "wb")
         wf.setnchannels(1)
         wf.setsampwidth(2)
         wf.setframerate(24000)  # Gemini always outputs 24kHz
-        
+        '''
 
         async for response in session.receive():
             if response.server_content:
                 if response.data is not None:
-                    wf.writeframes(response.data)
+                    #wf.writeframes(response.data)
+                    yield response.data
             elif response.tool_call:
                 function_responses = []
                 for fc in response.tool_call.function_calls:
@@ -120,10 +126,10 @@ class ChatAudioClient:
                 
         print("Written response audio...")
         
-        wf.close()
+        #wf.close()
         
         
-        return output_path
+        #return output_path
 
     def play_output(self, wav_path):
         print("🔊 Playing response...")
@@ -138,12 +144,36 @@ class ChatAudioClient:
 
 
     async def _loop(self):
+        queue = asyncio.Queue()
+        playback_done_event=asyncio.Event()
+        async def playback():
+            with sd.RawOutputStream(samplerate=24000, channels=1, dtype='int16') as stream:
+                while True:
+                    chunk = await queue.get()
+                    if chunk is None and self.running:
+                        playback_done_event.set()
+                        continue
+                    if chunk is None and not self.running:
+                        playback_done_event.set()
+                        break
+                    stream.write(chunk)
+                    
         async with self.client.aio.live.connect(model=self.model, config=self.config) as session:
+            playback_task = asyncio.create_task(playback())
+            
             while self.running:
+                playback_done_event.clear()
                 print("🟢 Chat audio client running.")
                 pcm_bytes = self.listen_to_user()
-                response_path = await self.process_user_input(pcm_bytes, session)
-                self.play_output(response_path)    
+                async for chunk in self.process_user_input(pcm_bytes, session):
+                    await queue.put(chunk)
+                
+                await queue.put(None)
+                await playback_done_event.wait()
+                    
+            await queue.put(None)
+            await playback_task
+
 
     def loop(self):
         asyncio.run(self._loop())
