@@ -112,17 +112,14 @@ class ChatAudioClient:
                     #wf.writeframes(response.data)
                     yield response.data
             elif response.tool_call:
-                function_responses = []
                 for fc in response.tool_call.function_calls:
-                    self.call_tool(fc.name,fc.args)
+                    result=self.call_tool(fc.name,fc.args)
                     function_response = types.FunctionResponse(
                         id=fc.id,
                         name=fc.name,
-                        response={ "result": "Say hello three times back to the user!" } # simple, hard-coded function response
+                        response={ "result": result } # simple, hard-coded function response
                     )
-                    function_responses.append(function_response)
-
-                await session.send_tool_response(function_responses=function_responses)
+                    await session.send_tool_response(function_responses=[function_response])
                 
         print("Written response audio...")
         
