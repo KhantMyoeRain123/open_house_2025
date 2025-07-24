@@ -40,6 +40,8 @@ class ChatAudioClient:
         self.channels = 1
         self.dtype = 'int16'  # Native format for Gemini input (16-bit PCM)
         os.makedirs("tmp", exist_ok=True)
+        print(sd.query_devices())
+        
         
         
 
@@ -144,16 +146,34 @@ class ChatAudioClient:
         queue = asyncio.Queue()
         playback_done_event=asyncio.Event()
         async def playback():
-            with sd.RawOutputStream(samplerate=24000, channels=1, dtype='int16') as stream:
+            with sd.RawOutputStream(samplerate=24000, blocksize=4800,channels=1, dtype='int16') as stream:
+                buffer = bytearray()  # Smooth out small/inconsistent chunks
                 while True:
                     chunk = await queue.get()
-                    if chunk is None and self.running:
-                        playback_done_event.set()
-                        continue
-                    if chunk is None and not self.running:
-                        playback_done_event.set()
-                        break
-                    stream.write(chunk)
+
+                    if chunk is None:
+                        if self.running:
+                            playback_done_event.set()
+                            continue
+                        else:
+                            # Flush any remaining audio
+                            if buffer:
+                                stream.write(buffer)
+                                buffer.clear()
+                            playback_done_event.set()
+                            break
+
+                    buffer.extend(chunk)
+
+                    # Write only when buffer is at least 100ms (4800 bytes)
+                    while len(buffer) >= 4800:
+                        stream.write(buffer[:4800])
+                        buffer = buffer[4800:]
+
+                # At the end, flush any remaining (short) data padded with silence
+                if buffer:
+                    padding = bytes(4800 - len(buffer))  # silence padding
+                    stream.write(buffer + padding)
                     
         async with self.client.aio.live.connect(model=self.model, config=self.config) as session:
             playback_task = asyncio.create_task(playback())
