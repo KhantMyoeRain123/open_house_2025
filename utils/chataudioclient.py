@@ -127,17 +127,6 @@ class ChatAudioClient:
         
         #return output_path
 
-    def play_output(self, wav_path):
-        print("🔊 Playing response...")
-
-        data, samplerate=sf.read(wav_path)
-
-        # Play it in full, blocking until complete
-        sd.play(data, samplerate)
-        sd.wait()
-
-        print("✅ Playback finished.")
-
 
     async def _loop(self):
         queue = asyncio.Queue()
@@ -171,13 +160,14 @@ class ChatAudioClient:
                             buffer.extend(chunk)
                     except asyncio.TimeoutError:
                         # No chunk arrived within interval; continue to write silence if needed
-                        pass
+                        print("timeout")
 
                     # Write a full block, or pad with silence if not enough data
                     if len(buffer) >= block_bytes:
                         stream.write(buffer[:block_bytes])
                         buffer = buffer[block_bytes:]
-                    elif buffer:
+                    else:
+                        print("Padding with silence...")
                         # Pad remaining bytes with silence to reach a full block
                         padding = bytes(block_bytes - len(buffer))
                         stream.write(buffer + padding)
