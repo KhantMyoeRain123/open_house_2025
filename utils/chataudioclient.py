@@ -160,14 +160,13 @@ class ChatAudioClient:
                             buffer.extend(chunk)
                     except asyncio.TimeoutError:
                         # No chunk arrived within interval; continue to write silence if needed
-                        print("timeout")
+                        pass
 
                     # Write a full block, or pad with silence if not enough data
                     if len(buffer) >= block_bytes:
                         stream.write(buffer[:block_bytes])
                         buffer = buffer[block_bytes:]
                     else:
-                        print("Padding with silence...")
                         # Pad remaining bytes with silence to reach a full block
                         padding = bytes(block_bytes - len(buffer))
                         stream.write(buffer + padding)
