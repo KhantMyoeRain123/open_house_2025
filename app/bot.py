@@ -1,4 +1,3 @@
-from dotenv import load_dotenv
 import sys
 import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -6,7 +5,7 @@ from utils.chataudioclient import ChatAudioClient
 from PySide6 import QtCore, QtWidgets
 import csv
 from collections import defaultdict
-from PySide6 import QtWidgets, QtCore, QtGui
+from PySide6 import QtWidgets, QtCore
 from chat_ui import ChatUI
 
 def read_json_club_data(path):
