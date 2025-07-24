@@ -41,9 +41,6 @@ class ChatAudioClient:
         self.dtype = 'int16'  # Native format for Gemini input (16-bit PCM)
         os.makedirs("tmp", exist_ok=True)
         print(sd.query_devices())
-        
-        
-        
 
     def start_recording(self):
         if not self.is_recording and self.is_listening:
@@ -146,34 +143,46 @@ class ChatAudioClient:
         queue = asyncio.Queue()
         playback_done_event=asyncio.Event()
         async def playback():
-            with sd.RawOutputStream(samplerate=24000, blocksize=4800,channels=1, dtype='int16') as stream:
-                buffer = bytearray()  # Smooth out small/inconsistent chunks
+            samplerate = 24000
+            blocksize = 4800  # 4800 frames = 0.2s at 24kHz
+            block_bytes = blocksize * 2  # 2 bytes per int16 sample (mono)
+            write_interval = blocksize / samplerate  # 0.2 seconds
+
+            buffer = bytearray()
+
+            with sd.RawOutputStream(samplerate=samplerate, blocksize=blocksize,
+                                    channels=1, dtype='int16') as stream:
                 while True:
-                    chunk = await queue.get()
+                    try:
+                        # Try to fill buffer for up to `write_interval` seconds
+                        while len(buffer) < block_bytes:
+                            chunk = await asyncio.wait_for(queue.get(), timeout=write_interval)
+                            if chunk is None:
+                                if self.running:
+                                    playback_done_event.set()
+                                    continue
+                                else:
+                                    # Flush remaining buffered audio
+                                    if buffer:
+                                        stream.write(buffer)
+                                        buffer.clear()
+                                    playback_done_event.set()
+                                    return
+                            buffer.extend(chunk)
+                    except asyncio.TimeoutError:
+                        # No chunk arrived within interval; continue to write silence if needed
+                        pass
 
-                    if chunk is None:
-                        if self.running:
-                            playback_done_event.set()
-                            continue
-                        else:
-                            # Flush any remaining audio
-                            if buffer:
-                                stream.write(buffer)
-                                buffer.clear()
-                            playback_done_event.set()
-                            break
+                    # Write a full block, or pad with silence if not enough data
+                    if len(buffer) >= block_bytes:
+                        stream.write(buffer[:block_bytes])
+                        buffer = buffer[block_bytes:]
+                    elif buffer:
+                        # Pad remaining bytes with silence to reach a full block
+                        padding = bytes(block_bytes - len(buffer))
+                        stream.write(buffer + padding)
+                        buffer.clear()
 
-                    buffer.extend(chunk)
-
-                    # Write only when buffer is at least 100ms (4800 bytes)
-                    while len(buffer) >= 4800:
-                        stream.write(buffer[:4800])
-                        buffer = buffer[4800:]
-
-                # At the end, flush any remaining (short) data padded with silence
-                if buffer:
-                    padding = bytes(4800 - len(buffer))  # silence padding
-                    stream.write(buffer + padding)
                     
         async with self.client.aio.live.connect(model=self.model, config=self.config) as session:
             playback_task = asyncio.create_task(playback())
