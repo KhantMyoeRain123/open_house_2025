@@ -28,58 +28,50 @@ class ChatAudioClient:
         }
 
         self.running = True
+        self.conversation_history = []
 
         self.audio_buffer = []
         self.is_recording = False
         self.is_listening=False
-        self.is_processing = False
-        self.is_speaking = False
+        self.is_replying=False
+        self.reset=False
         self.record_event = threading.Event()
 
-        # UI callback
-        self.ui_callback = None
-        
         # Audio settings
         self.sample_rate = 16000
         self.channels = 1
         self.dtype = 'int16'  # Native format for Gemini input (16-bit PCM)
         os.makedirs("tmp", exist_ok=True)
-        
-    def set_ui_callback(self, callback):
-        """UIコールバック関数を設定"""
-        self.ui_callback = callback
-        
-    def notify_ui(self, event, data=None):
-        """UIに状態変化を通知"""
-        if self.ui_callback:
-            self.ui_callback(event, data)
-        
-        
+        print(sd.query_devices())
 
     def start_recording(self):
         if not self.is_recording and self.is_listening:
             self.record_event.set()
             self.is_recording = True
-            self.notify_ui("recording_started")
             print("🔴 Recording started.")
 
     def stop_recording(self):
         if self.is_recording:
             self.record_event.clear()
             self.is_recording = False
-            self.notify_ui("recording_stopped")
-            print("⏹️ Recording stopped.")
+            print("🛑 Recording stopped.")
 
     def listen_to_user(self):
         self.record_event.clear()
         print("👂 Waiting to record...")
         self.is_listening=True
-        self.notify_ui("listening_started")
-        self.record_event.wait()
+        while not self.record_event.wait(timeout=0.1):
+            if self.reset:
+                print("❌ Reset detected while waiting to record.")
+                self.is_listening = False
+                return b""
         self.audio_buffer.clear()
 
         with sd.InputStream(samplerate=self.sample_rate, channels=self.channels, dtype=self.dtype) as stream:
             while self.record_event.is_set():
+                if self.reset:
+                    print("❌ Reset detected during recording.")
+                    break
                 data, _ = stream.read(1024)
                 self.audio_buffer.append(data)
                 time.sleep(0.01)
@@ -87,7 +79,7 @@ class ChatAudioClient:
         print(f"🎙️ Captured {len(self.audio_buffer)} chunks.")
         audio = np.concatenate(self.audio_buffer, axis=0)
         self.is_listening=False
-        self.notify_ui("listening_finished")
+        self.is_replying=True
         # Save a copy for debugging
         wav_path = "tmp/user.wav"
         with wave.open(wav_path, 'wb') as wf:
@@ -106,9 +98,6 @@ class ChatAudioClient:
         pass
 
     async def process_user_input(self, pcm_bytes, session):
-        self.is_processing = True
-        self.notify_ui("processing_started")
-        
         await session.send_realtime_input(activity_start=types.ActivityStart())
         await session.send_realtime_input(
         audio=types.Blob(data=pcm_bytes, mime_type="audio/pcm;rate=16000")
@@ -125,7 +114,6 @@ class ChatAudioClient:
         wf.setsampwidth(2)
         wf.setframerate(24000)  # Gemini always outputs 24kHz
         '''
-
         async for response in session.receive():
             if response.server_content:
                 if response.data is not None:
@@ -148,117 +136,87 @@ class ChatAudioClient:
         
         #return output_path
 
-    def play_output(self, wav_path):
-        print("🔊 Playing response...")
-
-        data, samplerate=sf.read(wav_path)
-
-        # Play it in full, blocking until complete
-        sd.play(data, samplerate)
-        sd.wait()
-
-        print("✅ Playback finished.")
-
 
     async def _loop(self):
         queue = asyncio.Queue()
-        playback_done_event = asyncio.Event()
-
+        playback_done_event=asyncio.Event()
         async def playback():
-            """
-            音声チャンクをバッファリングし、一定のブロックサイズで再生する。
-            これにより、音声の途切れ（アンダーラン）を防ぎ、再生を安定させる。
-            """
             samplerate = 24000
-            blocksize = 4800  # 4800フレーム = 24000 Hzで0.2秒
-            block_bytes = blocksize * 2  # int16は2バイト/サンプル
-            write_interval = blocksize / samplerate  # 0.2秒
+            blocksize = 4800  # 4800 frames = 0.2s at 24kHz
+            block_bytes = blocksize * 2  # 2 bytes per int16 sample (mono)
+            write_interval = blocksize / samplerate  # 0.2 seconds
 
             buffer = bytearray()
 
             with sd.RawOutputStream(samplerate=samplerate, blocksize=blocksize,
-                                  channels=1, dtype='int16') as stream:
+                                    channels=1, dtype='int16') as stream:
                 while True:
                     try:
-                        # 次のブロックを書き込むのに十分なデータがバッファに溜まるまで待つ
+                        # Try to fill buffer for up to `write_interval` seconds
                         while len(buffer) < block_bytes:
-                            # タイムアウト付きでキューからチャンクを取得
-                            chunk = await asyncio.wait_for(queue.get(), timeout=write_interval * 2)
-                            
+                            chunk = await asyncio.wait_for(queue.get(), timeout=write_interval)
                             if chunk is None:
-                                # 発話終了の合図(None)を受け取った
-                                # バッファに残っているデータを再生する
-                                if buffer:
-                                    stream.write(buffer)
-                                    buffer.clear()
-                                
-                                playback_done_event.set() # メインループに再生完了を通知
-
-                                if not self.running:
-                                    return  # アプリケーション全体が終了する場合、タスクを終了
-                                else:
-                                    # アプリは続行中。次の発話を待つためにループを続ける
+                                if not self.reset:
+                                    playback_done_event.set()
                                     continue
-                            
+                                else:
+                                    # Flush remaining buffered audio
+                                    if buffer:
+                                        stream.write(buffer)
+                                        buffer.clear()
+                                    playback_done_event.set()
+                                    return
                             buffer.extend(chunk)
-
                     except asyncio.TimeoutError:
-                        # 新しい音声チャンクが時間内に届かなかった場合（例：ネットワーク遅延）
-                        # バッファにデータが残っていれば、無音でパディングして再生する
-                        if buffer:
-                            padding = bytes(block_bytes - len(buffer))
-                            stream.write(buffer + padding)
-                            buffer.clear()
-                        # バッファが空なら何もしない（無音を再生し続けることになる）
-                        continue
+                        # No chunk arrived within interval; continue to write silence if needed
+                        pass
 
-                    # バッファから1ブロック分のデータを書き出す
-                    stream.write(buffer[:block_bytes])
-                    # 書き出した分をバッファから削除
-                    buffer = buffer[block_bytes:]
+                    # Write a full block, or pad with silence if not enough data
+                    if len(buffer) >= block_bytes:
+                        stream.write(buffer[:block_bytes])
+                        buffer = buffer[block_bytes:]
+                    else:
+                        # Pad remaining bytes with silence to reach a full block
+                        padding = bytes(block_bytes - len(buffer))
+                        stream.write(buffer + padding)
+                        buffer.clear()
 
-        # --- メインループ (最初のコードのロジックを維持) ---
-        async with self.client.aio.live.connect(model=self.model, config=self.config) as session:
-            playback_task = asyncio.create_task(playback())
-            
-            while self.running:
-                playback_done_event.clear()
-                print("🟢 Chat audio client running.")
+        while self.running: 
+            print("Entering")  
+            async with self.client.aio.live.connect(model=self.model, config=self.config) as session:
+                playback_task = asyncio.create_task(playback())
                 
-                # 各サイクル開始時に状態をリセット
-                self.is_processing = False
-                self.is_speaking = False
-                
-                pcm_bytes = self.listen_to_user()
-                
-                # ここで is_processing = True を設定するのが一般的
-                # self.is_processing = True 
-                # self.notify_ui("processing_started")
-
-                response_started = False
-                
-                async for chunk in self.process_user_input(pcm_bytes, session):
-                    if not response_started:
-                        # 最初のレスポンスチャンクを受け取ったら発話開始
-                        self.is_processing = False
-                        self.is_speaking = True
-                        self.notify_ui("speaking_started")
-                        response_started = True
+                while True:
+                    if self.reset:
+                        print("🔁 Reset requested. Restarting session...")
+                        self.reset = False
+                        break  # Exit inner loop to reconnect
                     
-                    await queue.put(chunk)
-                
-                # 発話データの送信が完了したことをplaybackタスクに伝える
+                    playback_done_event.clear()
+                    print("🟢 Chat audio client running.")
+                    pcm_bytes = self.listen_to_user()
+                    if not self.reset:
+                        gen = self.process_user_input(pcm_bytes, session)
+                        async for chunk in gen:
+                            if self.reset:
+                                print("Reset during playback...")
+                                await gen.aclose()
+                                while not queue.empty():
+                                    try:
+                                        queue.get_nowait()
+                                    except asyncio.QueueEmpty:
+                                        break
+                                await queue.put(None)
+                            else:
+                                await queue.put(chunk)
+                    
+                    await queue.put(None)
+                    await playback_done_event.wait()
+                    self.is_replying=False
+                        
                 await queue.put(None)
-                # playbackタスクが全ての音声データを再生し終えるのを待つ
-                await playback_done_event.wait()
+                await playback_task
                 
-                # 発話終了をUIに通知
-                self.is_speaking = False
-                self.notify_ui("speaking_finished")
-            
-            # ループを抜けた後、クリーンアップ
-            await queue.put(None)
-            await playback_task
 
 
     def loop(self):
