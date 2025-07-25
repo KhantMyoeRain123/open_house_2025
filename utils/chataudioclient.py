@@ -33,6 +33,8 @@ class ChatAudioClient:
         self.audio_buffer = []
         self.is_recording = False
         self.is_listening=False
+        self.is_replying=False
+        self.reset=False
         self.record_event = threading.Event()
 
         # Audio settings
@@ -58,11 +60,18 @@ class ChatAudioClient:
         self.record_event.clear()
         print("👂 Waiting to record...")
         self.is_listening=True
-        self.record_event.wait()
+        while not self.record_event.wait(timeout=0.1):
+            if self.reset:
+                print("❌ Reset detected while waiting to record.")
+                self.is_listening = False
+                return b""
         self.audio_buffer.clear()
 
         with sd.InputStream(samplerate=self.sample_rate, channels=self.channels, dtype=self.dtype) as stream:
             while self.record_event.is_set():
+                if self.reset:
+                    print("❌ Reset detected during recording.")
+                    break
                 data, _ = stream.read(1024)
                 self.audio_buffer.append(data)
                 time.sleep(0.01)
@@ -70,6 +79,7 @@ class ChatAudioClient:
         print(f"🎙️ Captured {len(self.audio_buffer)} chunks.")
         audio = np.concatenate(self.audio_buffer, axis=0)
         self.is_listening=False
+        self.is_replying=True
         # Save a copy for debugging
         wav_path = "tmp/user.wav"
         with wave.open(wav_path, 'wb') as wf:
@@ -104,7 +114,6 @@ class ChatAudioClient:
         wf.setsampwidth(2)
         wf.setframerate(24000)  # Gemini always outputs 24kHz
         '''
-
         async for response in session.receive():
             if response.server_content:
                 if response.data is not None:
@@ -147,7 +156,7 @@ class ChatAudioClient:
                         while len(buffer) < block_bytes:
                             chunk = await asyncio.wait_for(queue.get(), timeout=write_interval)
                             if chunk is None:
-                                if self.running:
+                                if not self.reset:
                                     playback_done_event.set()
                                     continue
                                 else:
@@ -172,22 +181,42 @@ class ChatAudioClient:
                         stream.write(buffer + padding)
                         buffer.clear()
 
-                    
-        async with self.client.aio.live.connect(model=self.model, config=self.config) as session:
-            playback_task = asyncio.create_task(playback())
-            
-            while self.running:
-                playback_done_event.clear()
-                print("🟢 Chat audio client running.")
-                pcm_bytes = self.listen_to_user()
-                async for chunk in self.process_user_input(pcm_bytes, session):
-                    await queue.put(chunk)
+        while self.running: 
+            print("Entering")  
+            async with self.client.aio.live.connect(model=self.model, config=self.config) as session:
+                playback_task = asyncio.create_task(playback())
                 
-                await queue.put(None)
-                await playback_done_event.wait()
+                while True:
+                    if self.reset:
+                        print("🔁 Reset requested. Restarting session...")
+                        self.reset = False
+                        break  # Exit inner loop to reconnect
                     
-            await queue.put(None)
-            await playback_task
+                    playback_done_event.clear()
+                    print("🟢 Chat audio client running.")
+                    pcm_bytes = self.listen_to_user()
+                    if not self.reset:
+                        gen = self.process_user_input(pcm_bytes, session)
+                        async for chunk in gen:
+                            if self.reset:
+                                print("Reset during playback...")
+                                await gen.aclose()
+                                while not queue.empty():
+                                    try:
+                                        queue.get_nowait()
+                                    except asyncio.QueueEmpty:
+                                        break
+                                await queue.put(None)
+                            else:
+                                await queue.put(chunk)
+                    
+                    await queue.put(None)
+                    await playback_done_event.wait()
+                    self.is_replying=False
+                        
+                await queue.put(None)
+                await playback_task
+                
 
 
     def loop(self):
