@@ -99,6 +99,7 @@ class ChatUI(QtWidgets.QWidget):
 
         # サークル情報が表示されているかのフラグ
         self.clubs_displayed = False
+        
 
     def update_status(self):
         """チャットボットの状態に応じてUIを更新"""
@@ -179,12 +180,19 @@ class ChatUI(QtWidgets.QWidget):
     def update_realtime_text(self, text):
         """リアルタイム音声認識結果を更新（削除済みのため何もしない）"""
         pass
+    
+    def _reset_app(self):
+        """アプリをリーセットする"""
+        self._restore_normal_button_style()
+        self.clubs_displayed=False
+        self.chatbot.running=False
 
     def handle_button_click(self):
         """ボタンクリックを処理（録音開始/停止 or アプリ終了）"""
         if self.clubs_displayed:
             # サークル情報が表示されている場合はアプリを終了
-            QtWidgets.QApplication.quit()
+            #QtWidgets.QApplication.quit()
+            self._reset_app()
         else:
             # 通常の録音機能
             self.record_voice()
