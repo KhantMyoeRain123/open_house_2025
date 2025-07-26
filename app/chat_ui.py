@@ -12,7 +12,8 @@ class ChatUI(QtWidgets.QWidget):
         self.setup_ui()
 
         # Connect the signal to the display method
-        self.club_data_received.connect(self.display_club_info)
+        self.club_data_received.connect(self.display_club_info_modal)
+
 
         # チャットボットの状態変化を監視するタイマー
         self.status_timer = QtCore.QTimer()
@@ -48,38 +49,6 @@ class ChatUI(QtWidgets.QWidget):
 
         self.layout.addWidget(self.status_widget)
 
-        # サークル情報表示エリア（中央）
-        self.club_info_container = QtWidgets.QWidget()
-        self.club_info_layout = QtWidgets.QVBoxLayout(self.club_info_container)
-
-        # サークル情報タイトル
-        self.club_info_title = QtWidgets.QLabel("あなたにおすすめのサークル", alignment=QtCore.Qt.AlignCenter)
-        self.club_info_title.setStyleSheet(
-            "font-size: 20px; font-weight: bold; color: #2c3e50; margin: 10px; padding: 10px;"
-        )
-        self.club_info_layout.addWidget(self.club_info_title)
-
-        # スクロール可能なサークル情報エリア
-        self.club_scroll_area = QtWidgets.QScrollArea()
-        self.club_scroll_area.setWidgetResizable(True)
-        self.club_scroll_area.setStyleSheet("""
-            QScrollArea {
-                background-color: #f8f9fa;
-                border: 2px solid #dee2e6;
-                border-radius: 10px;
-                min-height: 300px;
-                max-height: 400px;
-            }
-        """)
-
-        self.club_content_widget = QtWidgets.QWidget()
-        self.club_content_layout = QtWidgets.QVBoxLayout(self.club_content_widget)
-        self.club_scroll_area.setWidget(self.club_content_widget)
-        self.club_info_layout.addWidget(self.club_scroll_area)
-
-        # 初期状態では非表示
-        self.club_info_container.hide()
-        self.layout.addWidget(self.club_info_container)
 
         # テスト用: サークル情報エリアが正しく表示されるかテスト
         # self.test_display()  # デバッグ時に有効化
@@ -290,18 +259,53 @@ class ChatUI(QtWidgets.QWidget):
             }
         """)
 
-    def display_club_info(self, clubs):
+    def display_club_info_modal(self, clubs):
         """サークル情報を表示"""
         print(f"[UI DEBUG] display_club_info called with {len(clubs)} clubs")
         print(f"[UI DEBUG] Club info container exists: {hasattr(self, 'club_info_container')}")
         print(f"[UI DEBUG] Club content layout exists: {hasattr(self, 'club_content_layout')}")
+
+
+        """サークル情報をモーダルで表示"""
+        modal = QtWidgets.QDialog(self)
+        modal.setWindowTitle("おすすめのサークル")
+        modal.setModal(True)
+        modal.resize(1500, 1000)  # モーダルのサイズを設定
+
+        # モーダルのレイアウト
+        modal_layout = QtWidgets.QVBoxLayout(modal)
+
+        # タイトル
+        self.club_info_title = QtWidgets.QLabel("あなたにおすすめのサークル", alignment=QtCore.Qt.AlignCenter)
+        self.club_info_title.setStyleSheet(
+            "font-size: 24px; font-weight: bold; color: white; margin: 10px; padding: 10px;"
+        )
+        
+        modal_layout.addWidget(self.club_info_title)
+
+        # スクロール可能なサークル情報エリアを追加
+        scroll_area = QtWidgets.QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setStyleSheet("""
+            QScrollArea {
+                background-color: #f8f9fa;
+                border-radius: 10px;
+                min-height: 600px;
+                max-height: 800px;
+            }
+        """)
+
+        self.content_widget = QtWidgets.QWidget()
+        self.club_content_layout = QtWidgets.QVBoxLayout(self.content_widget)
+
+        # サークル情報を表示
 
         # 既存の内容をクリア
         for i in reversed(range(self.club_content_layout.count())):
             child = self.club_content_layout.itemAt(i).widget()
             if child:
                 child.setParent(None)
-        print("[UI DEBUG] Cleared existing content")
+
 
         if not clubs:
             # サークルが見つからない場合
@@ -365,15 +369,28 @@ class ChatUI(QtWidgets.QWidget):
                     club_layout.addWidget(labels_label)
 
                 self.club_content_layout.addWidget(club_frame)
+
                 print(f"[UI DEBUG] Club {i} added to layout")
 
-        # スペーサーを追加してレイアウトを整える
+
+
         self.club_content_layout.addStretch()
+        scroll_area.setWidget(self.content_widget)
+        modal_layout.addWidget(scroll_area)
+
+        # 閉じるボタン
+        close_button = QtWidgets.QPushButton("閉じる")
+        close_button.setStyleSheet("font-size: 16px; padding: 10px; background-color: #e74c3c; color: white; border-radius: 5px;")
+        close_button.clicked.connect(modal.close)
+        modal_layout.addWidget(close_button, alignment=QtCore.Qt.AlignCenter)
+
+        # モーダルを表示
+        modal.exec()
+
 
         # サークル情報コンテナを表示
-        print(f"[UI DEBUG] Container visibility before show: {self.club_info_container.isVisible()}")
-        self.club_info_container.show()
-        print(f"[UI DEBUG] Container visibility after show: {self.club_info_container.isVisible()}")
+        print(f"[UI DEBUG] Container visibility before show: {self.content_widget.isVisible()}")
+        print(f"[UI DEBUG] Container visibility after show: {self.content_widget.isVisible()}")
         print("[UI DEBUG] Club info container shown")
 
         # サークル情報が表示されていることを示すフラグを設定
@@ -381,7 +398,7 @@ class ChatUI(QtWidgets.QWidget):
         print("[UI DEBUG] clubs_displayed flag set to True")
 
         # 強制的にウィジェットを更新
-        self.club_info_container.update()
+        self.content_widget.update()
         self.update()
         print("[UI DEBUG] UI update forced")
 
@@ -397,7 +414,8 @@ class ChatUI(QtWidgets.QWidget):
             }
         ]
         print("Testing display with test clubs")
-        self.display_club_info(test_clubs)
+        self.display_club_info_modal(test_clubs)
+
 
     def receive_club_data(self, clubs):
         """外部からサークルデータを受信し、Signalを発行"""
