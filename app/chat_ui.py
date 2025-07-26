@@ -1,19 +1,19 @@
-from PySide6 import QtCore, QtWidgets, QtGui
+from PySide6 import QtCore, QtWidgets
 
 
 class ChatUI(QtWidgets.QWidget):
     # Signal for club data display
     club_data_received = QtCore.Signal(list)
-    
+
     def __init__(self, chatbot):
         super().__init__()
 
         self.chatbot = chatbot
         self.setup_ui()
-        
+
         # Connect the signal to the display method
         self.club_data_received.connect(self.display_club_info)
-        
+
         # チャットボットの状態変化を監視するタイマー
         self.status_timer = QtCore.QTimer()
         self.status_timer.timeout.connect(self.update_status)
@@ -21,40 +21,44 @@ class ChatUI(QtWidgets.QWidget):
 
     def setup_ui(self):
         self.setWindowTitle("ワセクラ - 早稲田大学サークル推薦AI")
-        
+
         # メインレイアウト
         self.layout = QtWidgets.QVBoxLayout(self)
         self.layout.setSpacing(20)  # 要素間のスペースを増やす
-        
+
         # タイトル
         title = QtWidgets.QLabel("ワセクラ - 早稲田大学サークル推薦AI", alignment=QtCore.Qt.AlignCenter)
-        title.setStyleSheet("font-size: 24px; font-weight: bold; margin: 15px; color: #2c3e50; background-color: #ecf0f1; padding: 15px; border-radius: 10px;")
+        title.setStyleSheet(
+            "font-size: 24px; font-weight: bold; margin: 15px; color: #2c3e50; background-color: #ecf0f1; padding: 15px; border-radius: 10px;"
+        )
         self.layout.addWidget(title)
-        
+
         # 状態表示エリア
         self.status_widget = QtWidgets.QWidget()
         status_layout = QtWidgets.QHBoxLayout(self.status_widget)
-        
+
         self.status_icon = QtWidgets.QLabel("[待機]")
         self.status_icon.setStyleSheet("font-size: 18px; font-weight: bold; color: #3498db; padding: 10px;")
         self.status_text = QtWidgets.QLabel("待機中...")
         self.status_text.setStyleSheet("font-size: 18px; color: #7f8c8d; padding: 10px;")
-        
+
         status_layout.addWidget(self.status_icon)
         status_layout.addWidget(self.status_text)
         status_layout.addStretch()
-        
+
         self.layout.addWidget(self.status_widget)
-        
+
         # サークル情報表示エリア（中央）
         self.club_info_container = QtWidgets.QWidget()
         self.club_info_layout = QtWidgets.QVBoxLayout(self.club_info_container)
-        
+
         # サークル情報タイトル
         self.club_info_title = QtWidgets.QLabel("あなたにおすすめのサークル", alignment=QtCore.Qt.AlignCenter)
-        self.club_info_title.setStyleSheet("font-size: 20px; font-weight: bold; color: #2c3e50; margin: 10px; padding: 10px;")
+        self.club_info_title.setStyleSheet(
+            "font-size: 20px; font-weight: bold; color: #2c3e50; margin: 10px; padding: 10px;"
+        )
         self.club_info_layout.addWidget(self.club_info_title)
-        
+
         # スクロール可能なサークル情報エリア
         self.club_scroll_area = QtWidgets.QScrollArea()
         self.club_scroll_area.setWidgetResizable(True)
@@ -67,30 +71,32 @@ class ChatUI(QtWidgets.QWidget):
                 max-height: 400px;
             }
         """)
-        
+
         self.club_content_widget = QtWidgets.QWidget()
         self.club_content_layout = QtWidgets.QVBoxLayout(self.club_content_widget)
         self.club_scroll_area.setWidget(self.club_content_widget)
         self.club_info_layout.addWidget(self.club_scroll_area)
-        
+
         # 初期状態では非表示
         self.club_info_container.hide()
         self.layout.addWidget(self.club_info_container)
-        
+
         # テスト用: サークル情報エリアが正しく表示されるかテスト
         # self.test_display()  # デバッグ時に有効化
-        
+
         # 下部の大きな録音ボタンエリア
         button_container = QtWidgets.QWidget()
         button_layout = QtWidgets.QVBoxLayout(button_container)
         button_layout.setAlignment(QtCore.Qt.AlignCenter)
         button_layout.setContentsMargins(0, 30, 0, 30)  # 上下の余白を調整
-        
+
         # ボタンの説明テキスト
-        self.button_instruction = QtWidgets.QLabel("クリックして音声で話しかけてください", alignment=QtCore.Qt.AlignCenter)
+        self.button_instruction = QtWidgets.QLabel(
+            "クリックして音声で話しかけてください", alignment=QtCore.Qt.AlignCenter
+        )
         self.button_instruction.setStyleSheet("font-size: 16px; color: #7f8c8d; margin: 10px;")
         button_layout.addWidget(self.button_instruction)
-        
+
         # 大きな円形の録音ボタン
         self.button = QtWidgets.QPushButton("話す!")
         self.button.setFixedSize(180, 180)  # ボタンサイズを大きく
@@ -112,16 +118,16 @@ class ChatUI(QtWidgets.QWidget):
             }
         """)
         self.button.clicked.connect(self.handle_button_click)
-        
+
         # ボタンを中央に配置するためのレイアウト調整
         button_wrapper = QtWidgets.QHBoxLayout()
         button_wrapper.addStretch()
         button_wrapper.addWidget(self.button)
         button_wrapper.addStretch()
-        
+
         button_layout.addLayout(button_wrapper)
         self.layout.addWidget(button_container)
-        
+
         # サークル情報が表示されているかのフラグ
         self.clubs_displayed = False
 
@@ -145,7 +151,7 @@ class ChatUI(QtWidgets.QWidget):
             self.button.setEnabled(True)  # 録音中は停止ボタンとして有効
             self.button.setText("停止")
             self.button_instruction.setText("録音を停止するにはボタンをクリックしてください")
-        elif hasattr(self.chatbot, 'is_speaking') and self.chatbot.is_speaking:
+        elif hasattr(self.chatbot, "is_speaking") and self.chatbot.is_speaking:
             self.status_icon.setText("[ワセクラ発話中]")
             self.status_icon.setStyleSheet("font-size: 18px; font-weight: bold; color: #27ae60; padding: 10px;")
             self.status_text.setText("ワセクラが話しています...")
@@ -154,7 +160,7 @@ class ChatUI(QtWidgets.QWidget):
             self.button.setText("話す!")
             self.button_instruction.setText("ワセクラの発話が終わるまでお待ちください")
             self._update_button_disabled_style()
-        elif hasattr(self.chatbot, 'is_processing') and self.chatbot.is_processing:
+        elif hasattr(self.chatbot, "is_processing") and self.chatbot.is_processing:
             self.status_icon.setText("[処理中]")
             self.status_icon.setStyleSheet("font-size: 18px; font-weight: bold; color: #9b59b6; padding: 10px;")
             self.status_text.setText("ワセクラが考え中...")
@@ -219,7 +225,7 @@ class ChatUI(QtWidgets.QWidget):
         # ボタンが無効な時は何もしない
         if not self.button.isEnabled():
             return
-            
+
         if not self.chatbot.is_recording:
             self.chatbot.start_recording()
             self._update_recording_button_style()
@@ -289,17 +295,19 @@ class ChatUI(QtWidgets.QWidget):
         print(f"[UI DEBUG] display_club_info called with {len(clubs)} clubs")
         print(f"[UI DEBUG] Club info container exists: {hasattr(self, 'club_info_container')}")
         print(f"[UI DEBUG] Club content layout exists: {hasattr(self, 'club_content_layout')}")
-        
+
         # 既存の内容をクリア
         for i in reversed(range(self.club_content_layout.count())):
             child = self.club_content_layout.itemAt(i).widget()
             if child:
                 child.setParent(None)
-        print(f"[UI DEBUG] Cleared existing content")
-        
+        print("[UI DEBUG] Cleared existing content")
+
         if not clubs:
             # サークルが見つからない場合
-            no_clubs_label = QtWidgets.QLabel("申し訳ございませんが、条件に合うサークルが見つかりませんでした。", alignment=QtCore.Qt.AlignCenter)
+            no_clubs_label = QtWidgets.QLabel(
+                "申し訳ございませんが、条件に合うサークルが見つかりませんでした。", alignment=QtCore.Qt.AlignCenter
+            )
             no_clubs_label.setStyleSheet("font-size: 16px; color: #e74c3c; padding: 20px;")
             self.club_content_layout.addWidget(no_clubs_label)
             print("[UI DEBUG] No clubs message added")
@@ -321,55 +329,57 @@ class ChatUI(QtWidgets.QWidget):
                         box-shadow: 0 2px 5px rgba(52, 152, 219, 0.3);
                     }
                 """)
-                
+
                 club_layout = QtWidgets.QVBoxLayout(club_frame)
-                
+
                 # サークル名
                 club_name = QtWidgets.QLabel(f"📍 {club.get('サークル', 'N/A')}")
                 club_name.setStyleSheet("font-size: 18px; font-weight: bold; color: #2c3e50; margin-bottom: 5px;")
                 club_layout.addWidget(club_name)
-                
+
                 # 活動内容
-                activity_content = club.get('活動内容', 'N/A')
-                if activity_content != 'N/A':
+                activity_content = club.get("活動内容", "N/A")
+                if activity_content != "N/A":
                     activity_label = QtWidgets.QLabel(f"🎯 活動内容: {activity_content}")
                     activity_label.setStyleSheet("font-size: 14px; color: #34495e; margin: 3px 0; padding-left: 10px;")
                     activity_label.setWordWrap(True)
                     club_layout.addWidget(activity_label)
-                
+
                 # 活動日時・場所
-                schedule = club.get('活動日時・場所', 'N/A')
-                if schedule != 'N/A':
+                schedule = club.get("活動日時・場所", "N/A")
+                if schedule != "N/A":
                     schedule_label = QtWidgets.QLabel(f"🕒 活動日時・場所: {schedule}")
                     schedule_label.setStyleSheet("font-size: 14px; color: #34495e; margin: 3px 0; padding-left: 10px;")
                     schedule_label.setWordWrap(True)
                     club_layout.addWidget(schedule_label)
-                
+
                 # ラベル情報
-                label1 = club.get('ラベル1', 'N/A')
-                label2 = club.get('ラベル２', 'N/A')
-                if label1 != 'N/A' or label2 != 'N/A':
-                    labels_text = f"🏷️ カテゴリ: {label2}" + (f" / {label1}" if label1 != 'N/A' else "")
+                label1 = club.get("ラベル1", "N/A")
+                label2 = club.get("ラベル２", "N/A")
+                if label1 != "N/A" or label2 != "N/A":
+                    labels_text = f"🏷️ カテゴリ: {label2}" + (f" / {label1}" if label1 != "N/A" else "")
                     labels_label = QtWidgets.QLabel(labels_text)
-                    labels_label.setStyleSheet("font-size: 13px; color: #7f8c8d; margin: 5px 0; padding-left: 10px; font-style: italic;")
+                    labels_label.setStyleSheet(
+                        "font-size: 13px; color: #7f8c8d; margin: 5px 0; padding-left: 10px; font-style: italic;"
+                    )
                     club_layout.addWidget(labels_label)
-                
+
                 self.club_content_layout.addWidget(club_frame)
                 print(f"[UI DEBUG] Club {i} added to layout")
-        
+
         # スペーサーを追加してレイアウトを整える
         self.club_content_layout.addStretch()
-        
+
         # サークル情報コンテナを表示
         print(f"[UI DEBUG] Container visibility before show: {self.club_info_container.isVisible()}")
         self.club_info_container.show()
         print(f"[UI DEBUG] Container visibility after show: {self.club_info_container.isVisible()}")
         print("[UI DEBUG] Club info container shown")
-        
+
         # サークル情報が表示されていることを示すフラグを設定
         self.clubs_displayed = True
         print("[UI DEBUG] clubs_displayed flag set to True")
-        
+
         # 強制的にウィジェットを更新
         self.club_info_container.update()
         self.update()
@@ -379,11 +389,11 @@ class ChatUI(QtWidgets.QWidget):
         """テスト用：サークル情報表示のテスト"""
         test_clubs = [
             {
-                'サークル': 'テストサークル1',
-                '活動内容': 'テスト活動内容1',
-                '活動日時・場所': 'テスト日時・場所1',
-                'ラベル1': 'テストラベル1',
-                'ラベル２': 'テストラベル2'
+                "サークル": "テストサークル1",
+                "活動内容": "テスト活動内容1",
+                "活動日時・場所": "テスト日時・場所1",
+                "ラベル1": "テストラベル1",
+                "ラベル２": "テストラベル2",
             }
         ]
         print("Testing display with test clubs")

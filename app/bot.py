@@ -1,10 +1,11 @@
-import sys
 import os
+import sys
+
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from utils.chataudioclient import ChatAudioClient
-from PySide6 import QtCore, QtWidgets, QtGui
 import csv
 from collections import defaultdict
+
+from utils.chataudioclient import ChatAudioClient
 
 # システム指示の定数定義
 SYSTEM_INSTRUCTION = """
@@ -42,7 +43,7 @@ def read_json_club_data(path):
         if filename.endswith(".csv"):
             file_path = os.path.join(dir_path, filename)
             try:
-                with open(file_path, newline='', encoding='utf-8-sig') as csvfile:
+                with open(file_path, newline="", encoding="utf-8-sig") as csvfile:
                     reader = csv.DictReader(csvfile)
                     grouped_data = defaultdict(list)
                     for row in reader:
@@ -63,10 +64,10 @@ def clean_club_names(club_names):
     cleaned = []
     for name in club_names:
         try:
-            if str(name)=='':
+            if str(name) == "":
                 continue
-            encoded = name.encode('utf-8')
-            decoded = encoded.decode('utf-8')
+            encoded = name.encode("utf-8")
+            decoded = encoded.decode("utf-8")
             cleaned.append(decoded)
         except UnicodeDecodeError:
             print(f"Skipping invalid UTF-8 club name: {name}")
@@ -79,77 +80,75 @@ class ClubRecommendationTools:
     @staticmethod
     def make_search_clubs_tool(available_clubs):
         """サークル検索ツールの定義を作成"""
-        search_clubs_tool={
-        "name":"search_clubs_tool",
-        "description":"学生の希望に基づいて、最も適したサークルを検索します。",
-        "parameters":{
-        "type": "object",
-        "properties": {
-            "clubs_to_search": {
-                "type": "array",
-                "items":{
-                    "type":"string",
-                    "enum":available_clubs,
+        search_clubs_tool = {
+            "name": "search_clubs_tool",
+            "description": "学生の希望に基づいて、最も適したサークルを検索します。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "clubs_to_search": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "enum": available_clubs,
+                        },
+                        "description": "学生の希望に基づいて検索するサークル。",
+                    },
                 },
-                "description": "学生の希望に基づいて検索するサークル。",
+                "required": ["clubs_to_search"],
             },
-        },
-        "required": ["clubs_to_search"],
-    },
-    }   
-    
+        }
+
         return search_clubs_tool
-    
-    
+
     @staticmethod
     def make_filter_clubs_tool():
         """サークルフィルタツールの定義を作成"""
-        filter_clubs_tool={
-        "name":"filter_clubs_tool",
-        "description":"学生のスケジュールとサークルの活動内容に基づいて、最も適したサークルを絞り込みます。",
-        "parameters":{
-        "type": "object",
-        "properties": {
-            "clubs_to_choose": {
-                "type": "array",
-                "items":{
-                    "type":"integer",
+        filter_clubs_tool = {
+            "name": "filter_clubs_tool",
+            "description": "学生のスケジュールとサークルの活動内容に基づいて、最も適したサークルを絞り込みます。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "clubs_to_choose": {
+                        "type": "array",
+                        "items": {
+                            "type": "integer",
+                        },
+                        "description": "学生のスケジュールと希望に合致し、提示されるサークルの番号。",
+                    },
                 },
-                "description": "学生のスケジュールと希望に合致し、提示されるサークルの番号。",
+                "required": ["clubs_to_choose"],
             },
-        },
-        "required": ["clubs_to_choose"],
-    },
-    }   
-    
+        }
+
         return filter_clubs_tool
-        
-    
+
     @staticmethod
     def make_tools(available_clubs):
         """ツール一覧を作成"""
-        tools=[]
+        tools = []
         tools.append(ClubRecommendationTools.make_search_clubs_tool(available_clubs))
         tools.append(ClubRecommendationTools.make_filter_clubs_tool())
         return tools
-    
+
     @staticmethod
-    def search_clubs(club_data,tool_args):
+    def search_clubs(club_data, tool_args):
         """サークル検索を実行"""
         print("Arguments:")
         print(tool_args)
-        
-        clubs_to_search=tool_args.get("clubs_to_search",[])
-        matching_clubs=[]
-        
+
+        clubs_to_search = tool_args.get("clubs_to_search", [])
+        matching_clubs = []
+
         for club in clubs_to_search:
             if club in club_data:
                 matching_clubs.extend(club_data[club])
             else:
                 print(f"Club {club} not found in club data.")
-        
+
         result_lines = []
-        for i,club in enumerate(matching_clubs):
+        for i, club in enumerate(matching_clubs):
             club_info = []
             club_info.append(f"サークル {i}")
             club_info.append(f"サークル: {club.get('サークル', 'N/A')}")
@@ -157,34 +156,34 @@ class ClubRecommendationTools:
             club_info.append(f"活動日時・場所: {club.get('活動日時・場所', 'N/A')}")
             club_info.append(f"ラベル1: {club.get('ラベル1', 'N/A')}")
             club_info.append(f"ラベル２: {club.get('ラベル２', 'N/A')}")
-            result_lines.append('\n'.join(club_info))
+            result_lines.append("\n".join(club_info))
             result_lines.append("-" * 40)
 
-        result_str = '\n'.join(result_lines).strip() + '\n'
+        result_str = "\n".join(result_lines).strip() + "\n"
         print(result_str)
-        return matching_clubs,result_str
-        
+        return matching_clubs, result_str
+
     @staticmethod
     def filter_clubs(founded_clubs, tool_args):
         """サークルフィルタリングを実行"""
         print(tool_args)
         print("Filtering clubs...")
-        
+
         clubs_to_choose = tool_args.get("clubs_to_choose", [])
         filtered_clubs = []
-        
+
         for club_index in clubs_to_choose:
             if 0 <= club_index < len(founded_clubs):
                 filtered_clubs.append(founded_clubs[club_index])
             else:
                 print(f"Invalid club index: {club_index}")
-        
+
         return filtered_clubs
 
 
 class ClubRecommendationBot(ChatAudioClient):
     """サークル推薦Bot"""
-    
+
     def __init__(self, api_key, club_data, tools=[], system_instruction=""):
         super().__init__(api_key, tools=tools, system_instruction=system_instruction)
         self.club_data = club_data
@@ -202,7 +201,7 @@ class ClubRecommendationBot(ChatAudioClient):
         """UIイベントハンドラー"""
         if not self.ui_widget:
             return
-            
+
         # 現在は特定のUIイベント処理は不要
         pass
 
@@ -211,7 +210,7 @@ class ClubRecommendationBot(ChatAudioClient):
         print(f"[DEBUG] Tool called: {tool_name}")
         print(f"[DEBUG] Tool args: {tool_args}")
         print(f"[DEBUG] UI widget exists: {self.ui_widget is not None}")
-        
+
         if tool_name == "search_clubs_tool":
             self.matching_clubs, result_str = ClubRecommendationTools.search_clubs(self.club_data, tool_args)
             print(f"[DEBUG] Search result: Found {len(self.matching_clubs)} clubs")
@@ -220,7 +219,7 @@ class ClubRecommendationBot(ChatAudioClient):
             if self.matching_clubs:
                 filtered_clubs = ClubRecommendationTools.filter_clubs(self.matching_clubs, tool_args)
                 print(f"[DEBUG] Filter result: {len(filtered_clubs)} clubs after filtering")
-                
+
                 # UIにサークル情報を表示（Signalを使用）
                 if self.ui_widget:
                     print(f"[DEBUG] About to display {len(filtered_clubs)} clubs on UI using Signal")
@@ -232,19 +231,19 @@ class ClubRecommendationBot(ChatAudioClient):
                         print(f"[DEBUG] Error sending UI update via Signal: {e}")
                 else:
                     print("[DEBUG] UI widget is None - cannot display results")
-                
+
                 # 結果の文字列を作成
                 result_lines = []
                 for i, club in enumerate(filtered_clubs):
-                    result_lines.append(f"選択されたサークル {i+1}: {club.get('サークル', 'N/A')}")
-                
+                    result_lines.append(f"選択されたサークル {i + 1}: {club.get('サークル', 'N/A')}")
+
                 result_str = f"選択されたサークル数: {len(filtered_clubs)}\n" + "\n".join(result_lines)
                 print(f"[DEBUG] Returning result: {result_str}")
                 return result_str
             else:
                 print("[DEBUG] No matching clubs found")
                 return "サークルが見つかりませんでした。"
-        
+
         print(f"[DEBUG] Unknown tool: {tool_name}")
         return ""
 
@@ -254,5 +253,5 @@ class ClubRecommendationBot(ChatAudioClient):
         club_data = read_json_club_data(data_path)
         cleaned_club_names = clean_club_names(club_data.keys())
         tools = ClubRecommendationTools.make_tools(cleaned_club_names)
-        
+
         return ClubRecommendationBot(api_key, club_data=club_data, tools=tools, system_instruction=SYSTEM_INSTRUCTION)
