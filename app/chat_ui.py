@@ -471,6 +471,8 @@ class ChatUI(QtWidgets.QWidget):
         self._restore_normal_button_style()
         self.clubs_displayed=False
         self.chatbot.running=False
+        self.is_first_interaction=True
+        self.is_processing_after_recording = False
 
     def handle_button_click(self):
         """ボタンクリックを処理（録音開始/停止 or アプリ終了）"""
