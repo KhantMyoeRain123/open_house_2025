@@ -2,14 +2,8 @@ from PySide6 import QtCore, QtWidgets, QtSvgWidgets, QtGui
 from PySide6.QtGui import QPainter, QLinearGradient, QColor, QPixmap
 from PySide6.QtCore import QPoint, Qt
 import os
-import numpy as np
-import sounddevice as sd
 
 # --- 音声レベル表示用の定数設定 ---
-DEVICE = None         # Noneでデフォルトのマイクを選択
-CHANNELS = 1          # モノラル
-SAMPLERATE = 44100    # サンプルレート (Hz)
-CHUNK_SIZE = 1024     # 一度に処理するサンプル数
 NUM_BARS = 20         # 表示する棒グラフの数
 
 
@@ -26,7 +20,7 @@ class ChatUI(QtWidgets.QWidget):
         # Connect the signal to the display method
         self.club_data_received.connect(self.display_club_info_modal)
 
-        # 音声レベル表示の初期化（音声ストリームは録音時に開始）
+        # 音声レベル表示の初期化（チャットボットから音声レベルを受け取る）
         self.setup_audio_waveform()
 
         # チャットボットの状態変化を監視するタイマー
@@ -35,10 +29,9 @@ class ChatUI(QtWidgets.QWidget):
         self.status_timer.start(100)  # 100ms間隔で更新
 
     def setup_audio_waveform(self):
-        """音声レベル表示の初期化（ストリームは録音時に開始）"""
+        """音声レベル表示の初期化（チャットボットから音声レベルを受け取る）"""
         # 音声レベルデータの初期化
         self.audio_level = 0.0
-        self.stream = None
         
         # UI更新用のタイマー（常に作成するが、録音時のみ動作）
         self.waveform_timer = QtCore.QTimer()
@@ -46,33 +39,11 @@ class ChatUI(QtWidgets.QWidget):
         self.waveform_timer.timeout.connect(self.update_audio_bars)
 
     def start_audio_stream(self):
-        """音声ストリームを開始"""
-        if self.stream is not None:
-            return  # 既に開始されている場合は何もしない
-            
-        try:
-            self.stream = sd.InputStream(
-                device=DEVICE,
-                channels=CHANNELS,
-                samplerate=SAMPLERATE,
-                blocksize=CHUNK_SIZE,
-                callback=self.audio_callback
-            )
-            self.stream.start()
-            self.waveform_timer.start()
-            print("音声ストリームを開始しました")
-        except Exception as e:
-            print(f"音声デバイスの初期化に失敗しました: {e}")
-            self.stream = None
+        """音声レベル表示を開始（タイマーのみ）"""
+        self.waveform_timer.start()
 
     def stop_audio_stream(self):
-        """音声ストリームを停止"""
-        if self.stream is not None:
-            self.stream.stop()
-            self.stream.close()
-            self.stream = None
-            print("音声ストリームを停止しました")
-        
+        """音声レベル表示を停止"""
         if self.waveform_timer.isActive():
             self.waveform_timer.stop()
         
@@ -93,14 +64,9 @@ class ChatUI(QtWidgets.QWidget):
                 """)
         self.audio_level = 0.0
 
-    def audio_callback(self, indata, frames, time, status):
-        """音声データが利用可能になったときに呼び出される関数"""
-        if status:
-            print(status)
-        # 音声レベルを計算（RMS値）
-        if indata.shape[1] > 0:
-            rms = np.sqrt(np.mean(indata[:, 0] ** 2))
-            self.audio_level = min(rms * 10, 1.0)  # 0-1の範囲に正規化
+    def update_audio_level(self, level):
+        """チャットボットから音声レベルを受け取る"""
+        self.audio_level = level
 
     def update_audio_bars(self):
         """音声レベルバーを更新する関数"""
@@ -787,6 +753,6 @@ class ChatUI(QtWidgets.QWidget):
         self.club_data_received.emit(clubs)
 
     def closeEvent(self, event):
-        """ウィンドウが閉じられたときに音声ストリームを停止・閉じる"""
+        """ウィンドウが閉じられたときに音声レベル表示を停止"""
         self.stop_audio_stream()
         super().closeEvent(event)
