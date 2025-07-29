@@ -38,6 +38,9 @@ class ChatAudioClient:
 
         # UI callback
         self.ui_callback = None
+        
+        # Audio level monitoring for UI
+        self.audio_level = 0.0
 
         # Audio settings
         self.sample_rate = 16000
@@ -82,11 +85,21 @@ class ChatAudioClient:
             while self.record_event.is_set():
                 data, _ = stream.read(1024)
                 self.audio_buffer.append(data)
+                
+                # Calculate audio level for UI visualization
+                if len(data) > 0:
+                    # Convert int16 to float for RMS calculation
+                    float_data = data.astype(np.float32) / 32768.0
+                    rms = np.sqrt(np.mean(float_data ** 2))
+                    self.audio_level = min(rms * 10, 1.0)  # 0-1の範囲に正規化
+                    self.notify_ui("audio_level_update", self.audio_level)
+                
                 time.sleep(0.01)
 
         print(f"🎙️ Captured {len(self.audio_buffer)} chunks.")
         audio = np.concatenate(self.audio_buffer, axis=0)
         self.is_listening = False
+        self.audio_level = 0.0  # Reset audio level when recording stops
         self.notify_ui("listening_finished")
         # Save a copy for debugging
         wav_path = "tmp/user.wav"

@@ -202,8 +202,9 @@ class ClubRecommendationBot(ChatAudioClient):
         if not self.ui_widget:
             return
 
-        # 現在は特定のUIイベント処理は不要
-        pass
+        # 音声レベル更新イベントを処理
+        if event == "audio_level_update" and data is not None:
+            self.ui_widget.update_audio_level(data)
 
     def call_tool(self, tool_name, tool_args):
         """ツール実行"""
