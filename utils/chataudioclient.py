@@ -76,7 +76,9 @@ class ChatAudioClient:
         print("👂 Waiting to record...")
         self.is_listening = True
         self.notify_ui("listening_started")
-        self.record_event.wait()
+        while not self.record_event.wait(timeout=0.1):
+            if not self.running:
+                return
         self.audio_buffer.clear()
 
         with sd.InputStream(samplerate=self.sample_rate, channels=self.channels, dtype=self.dtype) as stream:
@@ -163,6 +165,14 @@ class ChatAudioClient:
         sd.wait()
 
         print("✅ Playback finished.")
+        
+    def _reset_states(self):
+        """ステートをリセット"""
+        self.running=True
+        self.is_recording = False
+        self.is_listening = False
+        self.is_processing = False
+        self.is_speaking = False
 
     async def _loop(self):
         queue = asyncio.Queue()
@@ -221,63 +231,61 @@ class ChatAudioClient:
                     buffer = buffer[block_bytes:]
 
         # --- メインループ (最初のコードのロジックを維持) ---
-        async with self.client.aio.live.connect(model=self.model, config=self.config) as session:
-            playback_task = asyncio.create_task(playback())
 
-            while self.running:
-                playback_done_event.clear()
-                print("🟢 Chat audio client running.")
+        while True:
+            print("Entering...")
+            self._reset_states()
+            async with self.client.aio.live.connect(model=self.model, config=self.config) as session:
+                playback_task = asyncio.create_task(playback())
 
-                # 各サイクル開始時に状態をリセット
-                self.is_processing = False
-                self.is_speaking = False
+                while self.running:
+                    playback_done_event.clear()
+                    print("🟢 Chat audio client running.")
 
-                pcm_bytes = self.listen_to_user()
+                    # 各サイクル開始時に状態をリセット
+                    self.is_processing = False
+                    self.is_speaking = False
 
-                # ここで is_processing = True を設定するのが一般的
-                # self.is_processing = True
-                # self.notify_ui("processing_started")
+                    pcm_bytes = self.listen_to_user()
 
-                response_started = False
+                    # ここで is_processing = True を設定するのが一般的
+                    # self.is_processing = True
+                    # self.notify_ui("processing_started")
+                    if self.running:
+                        response_started = False
+                        gen = self.process_user_input(pcm_bytes, session)
+                        async for chunk in gen:
+                            if not response_started:
+                                # 最初のレスポンスチャンクを受け取ったら発話開始
+                                self.is_processing = False
+                                self.is_speaking = True
+                                self.notify_ui("speaking_started")
+                                response_started = True
+                            if not self.running:
+                                print("Reset during playback...")
+                                await gen.aclose()
+                                while not queue.empty():
+                                    try:
+                                        queue.get_nowait()
+                                    except asyncio.QueueEmpty:
+                                        break
+                                await queue.put(None)
+                            else:
+                                await queue.put(chunk)
 
-                gen = self.process_user_input(pcm_bytes, session)
-                async for chunk in gen:
-                    if not response_started:
-                        # 最初のレスポンスチャンクを受け取ったら発話開始
-                        self.is_processing = False
-                        self.is_speaking = True
-                        self.notify_ui("speaking_started")
-                        response_started = True
-                    
-                    if not self.running:
-                        print("Reset during playback...")
-                        await gen.aclose()
-                        while not queue.empty():
-                            try:
-                                queue.get_nowait()
-                            except asyncio.QueueEmpty:
-                                break
+                        # 発話データの送信が完了したことをplaybackタスクに伝える
                         await queue.put(None)
-                        break
-                    else:
-                        await queue.put(chunk)
+                        # playbackタスクが全ての音声データを再生し終えるのを待つ
+                        await playback_done_event.wait()
 
-                # 発話データの送信が完了したことをplaybackタスクに伝える
+                        # 発話終了をUIに通知
+                        self.is_speaking = False
+                        self.notify_ui("speaking_finished")
+
+                # ループを抜けた後、クリーンアップ
                 await queue.put(None)
-                # playbackタスクが全ての音声データを再生し終えるのを待つ
-                await playback_done_event.wait()
+                await playback_task
 
-                # 発話終了をUIに通知
-                self.is_speaking = False
-                self.notify_ui("speaking_finished")
-                
-                # AI応答完了後に質問カウントを更新（Botクラスで実装される場合）
-                if hasattr(self, 'increment_question_count'):
-                    self.increment_question_count()
-
-            # ループを抜けた後、クリーンアップ
-            await queue.put(None)
-            await playback_task
 
     def loop(self):
         asyncio.run(self._loop())

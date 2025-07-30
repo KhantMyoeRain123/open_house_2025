@@ -625,35 +625,11 @@ class ChatUI(QtWidgets.QWidget):
     def _reset_app(self):
         """アプリをリセットして初期状態に戻す"""
         self._restore_normal_button_style()
-        self.clubs_displayed = False
-        
-        # チャットボットの実行状態を停止
-        if hasattr(self.chatbot, 'running'):
-            self.chatbot.running = False
-        
-        # チャットセッションをリセット
-        if hasattr(self.chatbot, 'reset_session'):
-            self.chatbot.reset_session()
-        
-        # 質問カウントをリセット
-        if hasattr(self.chatbot, 'reset_question_count'):
-            self.chatbot.reset_question_count()
-        
-        # UI状態をリセット
-        self.is_first_interaction = True
+
+        self.clubs_displayed=False
+        self.chatbot.running=False
+        self.is_first_interaction=True
         self.is_processing_after_recording = False
-        
-        # 表示中のサークル画像をクリア
-        self.clear_club_images()
-        
-        # 状態記録をリセット
-        self.previous_status = None
-        
-        # チャット履歴をクリア
-        self.chat_history.clear()
-        
-        # ステータスメッセージをクリア
-        self.status_label.setText("")
 
     def handle_button_click(self):
         """ボタンクリックを処理（録音開始/停止 or アプリ終了）"""
