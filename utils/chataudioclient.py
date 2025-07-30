@@ -281,6 +281,11 @@ class ChatAudioClient:
                         # 発話終了をUIに通知
                         self.is_speaking = False
                         self.notify_ui("speaking_finished")
+                        
+                        # AI応答完了後に質問カウントを更新（Botクラスで実装される場合）
+                        if hasattr(self, 'increment_question_count'):
+                            self.increment_question_count()
+                            print(f"[DEBUG] Question count incremented to: {getattr(self, 'current_question_count', 'unknown')}")
 
                 # ループを抜けた後、クリーンアップ
                 await queue.put(None)

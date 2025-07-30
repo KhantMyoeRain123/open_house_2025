@@ -165,10 +165,10 @@ class ChatUI(QtWidgets.QWidget):
             x = self.width() - widget.width() - margin
             y = margin + 120  # ヘッダーを避けて配置（少し下に移動）
         elif position == 'bottom-right':
-            x = self.width() - widget.width() - margin
+            x = self.width() - widget.width() - margin -20
             y = self.height() - widget.height() - margin  # ボタンエリアを避けつつさらに下寄りに配置
         elif position == 'bottom-left':
-            x = margin
+            x = margin - 40  # 左下の画像をより左に移動
             y = self.height() - widget.height() - margin  # ボタンエリアを避けつつさらに下寄りに配置
         
         widget.move(x, y)
@@ -493,7 +493,7 @@ class ChatUI(QtWidgets.QWidget):
             self.status_text.setText("サークル情報を確認してください")
             self.status_text.setStyleSheet("font-size: 20px; color: #27ae60; padding: 10px; background-color: transparent;")
             self.button.setEnabled(True)
-            self._set_button_content(text="終了")
+            self._set_button_content(text="リセット")
             self._set_button_instruction_text("アプリを終了するにはボタンをクリックしてください")
             self._update_exit_button_style()
         elif self.chatbot.is_recording:
@@ -718,7 +718,7 @@ class ChatUI(QtWidgets.QWidget):
         self.button.setStyleSheet("""
             QPushButton {
                 background: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
-                    stop: 0 #e74c3c, stop: 1 #a93226);
+                    stop: 0 #27ae60, stop: 1 #1e8e4f);
                 color: white;
                 border: none;
                 border-radius: 90px;
@@ -727,11 +727,11 @@ class ChatUI(QtWidgets.QWidget):
             }
             QPushButton:hover {
                 background: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
-                    stop: 0 #f05d4e, stop: 1 #c0392b);
+                    stop: 0 #2ecc71, stop: 1 #27ae60);
             }
             QPushButton:pressed {
                 background: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
-                    stop: 0 #c0392b, stop: 1 #7f1d1d);
+                    stop: 0 #1e8e4f, stop: 1 #16703c);
             }
         """)
 
