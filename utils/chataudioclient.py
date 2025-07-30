@@ -231,6 +231,7 @@ class ChatAudioClient:
                     buffer = buffer[block_bytes:]
 
         # --- メインループ (最初のコードのロジックを維持) ---
+
         while True:
             print("Entering...")
             self._reset_states()
@@ -284,6 +285,7 @@ class ChatAudioClient:
                 # ループを抜けた後、クリーンアップ
                 await queue.put(None)
                 await playback_task
+
 
     def loop(self):
         asyncio.run(self._loop())
