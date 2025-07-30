@@ -240,15 +240,27 @@ class ChatAudioClient:
 
                 response_started = False
 
-                async for chunk in self.process_user_input(pcm_bytes, session):
+                gen = self.process_user_input(pcm_bytes, session)
+                async for chunk in gen:
                     if not response_started:
                         # 最初のレスポンスチャンクを受け取ったら発話開始
                         self.is_processing = False
                         self.is_speaking = True
                         self.notify_ui("speaking_started")
                         response_started = True
-
-                    await queue.put(chunk)
+                    
+                    if not self.running:
+                        print("Reset during playback...")
+                        await gen.aclose()
+                        while not queue.empty():
+                            try:
+                                queue.get_nowait()
+                            except asyncio.QueueEmpty:
+                                break
+                        await queue.put(None)
+                        break
+                    else:
+                        await queue.put(chunk)
 
                 # 発話データの送信が完了したことをplaybackタスクに伝える
                 await queue.put(None)
@@ -258,6 +270,10 @@ class ChatAudioClient:
                 # 発話終了をUIに通知
                 self.is_speaking = False
                 self.notify_ui("speaking_finished")
+                
+                # AI応答完了後に質問カウントを更新（Botクラスで実装される場合）
+                if hasattr(self, 'increment_question_count'):
+                    self.increment_question_count()
 
             # ループを抜けた後、クリーンアップ
             await queue.put(None)

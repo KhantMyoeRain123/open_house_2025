@@ -189,6 +189,10 @@ class ClubRecommendationBot(ChatAudioClient):
         self.club_data = club_data
         self.matching_clubs = None
         self.ui_widget = None
+        
+        # 質問進捗管理
+        self.total_questions = 5  # 実際の質問回数（挨拶は除く）
+        self.current_question_count = 0  # 現在の応答回数（挨拶含む）
 
     def set_ui_widget(self, ui_widget):
         """UIウィジェットを設定し、コールバックを登録"""
@@ -205,6 +209,25 @@ class ClubRecommendationBot(ChatAudioClient):
         # 音声レベル更新イベントを処理
         if event == "audio_level_update" and data is not None:
             self.ui_widget.update_audio_level(data)
+
+    def increment_question_count(self):
+        """質問回数をインクリメント"""
+        self.current_question_count += 1
+                
+    def reset_question_count(self):
+        """質問回数をリセット"""
+        self.current_question_count = 0
+
+    def reset_session(self):
+        """セッション状態をリセット"""
+        # 質問回数をリセット
+        self.reset_question_count()
+        
+        # マッチしたサークル情報をクリア
+        self.matching_clubs = None
+        
+        # 実行状態をリセット
+        self.running = True
 
     def call_tool(self, tool_name, tool_args):
         """ツール実行"""

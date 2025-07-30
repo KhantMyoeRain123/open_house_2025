@@ -105,3 +105,19 @@ Start by reading `utils/chataudioclient.py` and then read `exampleclient.py`.
 (まず `utils/chataudioclient.py` を読み、次に `exampleclient.py` を読みます。)
 
 The main application is found under the `app` folder and in the file `main.py`.
+
+
+New process!!
+
+フォントを使うために... (to use font)
+mkdir -p ~/.fonts
+フォント用のフォルダを作る (make folder for font)
+
+https://fonts.google.com/selection
+ここにアクセスして、ダウンロードして、.fontsにおく (access this URL. download and place in the .fonts)
+
+.fontsで (go .fonts and do this)
+fc-cache -fv
+を実行
+
+これをやると今設定しているフォントが使えるようになるはず
