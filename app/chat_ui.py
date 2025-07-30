@@ -625,7 +625,8 @@ class ChatUI(QtWidgets.QWidget):
     def _reset_app(self):
         """アプリをリセットして初期状態に戻す"""
         self._restore_normal_button_style()
-
+        self.chatbot.reset_question_count()
+        self.clear_club_images()
         self.clubs_displayed=False
         self.chatbot.running=False
         self.is_first_interaction=True
