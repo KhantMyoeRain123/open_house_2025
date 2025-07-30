@@ -218,16 +218,16 @@ class ClubRecommendationBot(ChatAudioClient):
         """質問回数をリセット"""
         self.current_question_count = 0
 
-    def reset_session(self):
-        """セッション状態をリセット"""
-        # 質問回数をリセット
-        self.reset_question_count()
+    # def reset_session(self):
+    #     """セッション状態をリセット"""
+    #     # 質問回数をリセット
+    #     self.reset_question_count()
         
-        # マッチしたサークル情報をクリア
-        self.matching_clubs = None
+    #     # マッチしたサークル情報をクリア
+    #     self.matching_clubs = None
         
-        # 実行状態をリセット
-        self.running = True
+    #     # 実行状態をリセット
+    #     self.running = True
 
     def call_tool(self, tool_name, tool_args):
         """ツール実行"""
