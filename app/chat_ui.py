@@ -165,7 +165,7 @@ class ChatUI(QtWidgets.QWidget):
             x = self.width() - widget.width() - margin
             y = margin + 120  # ヘッダーを避けて配置（少し下に移動）
         elif position == 'bottom-right':
-            x = self.width() - widget.width() - margin -20
+            x = self.width() - widget.width() - margin +20
             y = self.height() - widget.height() - margin  # ボタンエリアを避けつつさらに下寄りに配置
         elif position == 'bottom-left':
             x = margin - 40  # 左下の画像をより左に移動

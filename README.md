@@ -113,7 +113,7 @@ New process!!
 mkdir -p ~/.fonts
 フォント用のフォルダを作る (make folder for font)
 
-https://fonts.google.com/selection
+https://fonts.google.com/specimen/Kosugi+Maru
 ここにアクセスして、ダウンロードして、.fontsにおく (access this URL. download and place in the .fonts)
 
 .fontsで (go .fonts and do this)
