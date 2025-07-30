@@ -1,4 +1,10 @@
-from PySide6 import QtCore, QtWidgets
+from PySide6 import QtCore, QtWidgets, QtSvgWidgets, QtGui
+from PySide6.QtGui import QPainter, QLinearGradient, QColor, QPixmap
+from PySide6.QtCore import QPoint, Qt
+import os
+
+# --- 音声レベル表示用の定数設定 ---
+NUM_BARS = 20         # 表示する棒グラフの数
 
 
 class ChatUI(QtWidgets.QWidget):
@@ -14,40 +20,220 @@ class ChatUI(QtWidgets.QWidget):
         # Connect the signal to the display method
         self.club_data_received.connect(self.display_club_info_modal)
 
+        # 音声レベル表示の初期化（チャットボットから音声レベルを受け取る）
+        self.setup_audio_waveform()
 
         # チャットボットの状態変化を監視するタイマー
         self.status_timer = QtCore.QTimer()
         self.status_timer.timeout.connect(self.update_status)
         self.status_timer.start(100)  # 100ms間隔で更新
 
+    def setup_audio_waveform(self):
+        """音声レベル表示の初期化（チャットボットから音声レベルを受け取る）"""
+        # 音声レベルデータの初期化
+        self.audio_level = 0.0
+        
+        # UI更新用のタイマー（常に作成するが、録音時のみ動作）
+        self.waveform_timer = QtCore.QTimer()
+        self.waveform_timer.setInterval(50)  # 50msごとに画面を更新
+        self.waveform_timer.timeout.connect(self.update_audio_bars)
+
+    def start_audio_stream(self):
+        """音声レベル表示を開始（タイマーのみ）"""
+        self.waveform_timer.start()
+
+    def stop_audio_stream(self):
+        """音声レベル表示を停止"""
+        if self.waveform_timer.isActive():
+            self.waveform_timer.stop()
+        
+        # すべてのバーをリセット
+        if hasattr(self, 'audio_bars'):
+            for bar in self.audio_bars:
+                bar.setValue(0)
+                bar.setStyleSheet("""
+                    QProgressBar {
+                        background-color: #2c3e50;
+                        border: 1px solid #34495e;
+                        border-radius: 3px;
+                    }
+                    QProgressBar::chunk {
+                        background-color: #2c3e50;
+                        border-radius: 2px;
+                    }
+                """)
+        self.audio_level = 0.0
+
+    def update_audio_level(self, level):
+        """チャットボットから音声レベルを受け取る"""
+        self.audio_level = level
+
+    def update_audio_bars(self):
+        """音声レベルバーを更新する関数"""
+        if hasattr(self, 'audio_bars'):
+            # 各バーの高さを音声レベルに応じて設定
+            for i, bar in enumerate(self.audio_bars):
+                # 各バーが異なるしきい値で反応するように設定
+                threshold = (i + 1) / NUM_BARS
+                if self.audio_level > threshold:
+                    # 音声レベルが高いほど緑色に、低いほど青色に
+                    if self.audio_level > 0.7:
+                        color = "#e74c3c"  # 赤
+                    elif self.audio_level > 0.4:
+                        color = "#f39c12"  # オレンジ
+                    else:
+                        color = "#3498db"  # 青
+                    bar.setStyleSheet(f"""
+                        QProgressBar {{
+                            background-color: #2c3e50;
+                            border: 1px solid #34495e;
+                            border-radius: 3px;
+                        }}
+                        QProgressBar::chunk {{
+                            background-color: {color};
+                            border-radius: 2px;
+                        }}
+                    """)
+                    bar.setValue(100)
+                else:
+                    bar.setStyleSheet("""
+                        QProgressBar {
+                            background-color: #2c3e50;
+                            border: 1px solid #34495e;
+                            border-radius: 3px;
+                        }
+                        QProgressBar::chunk {
+                            background-color: #2c3e50;
+                            border-radius: 2px;
+                        }
+                    """)
+                    bar.setValue(0)
+
+    def update_waveform(self):
+        """波形プロットを更新する関数（互換性のため残す）"""
+        pass
+
     def setup_ui(self):
         self.setWindowTitle("ワセクラ - 早稲田大学サークル推薦AI")
+
+        # メインウィンドウのスタイル（背景色はpaintEventで描画）
+        self.setStyleSheet("""
+            QWidget {
+                color: #ffffff;
+            }
+        """)
 
         # メインレイアウト
         self.layout = QtWidgets.QVBoxLayout(self)
         self.layout.setSpacing(20)  # 要素間のスペースを増やす
 
+        # ヘッダー部分（タイトルとロゴ）
+        header_widget = QtWidgets.QWidget()
+        header_layout = QtWidgets.QHBoxLayout(header_widget)
+        
         # タイトル
         title = QtWidgets.QLabel("ワセクラ - 早稲田大学サークル推薦AI", alignment=QtCore.Qt.AlignCenter)
         title.setStyleSheet(
-            "font-size: 24px; font-weight: bold; margin: 15px; color: #2c3e50; background-color: #ecf0f1; padding: 15px; border-radius: 10px;"
+            "font-family: 'Noto Serif CJK TC SemiBold', 'Kosugi Maru', 'Meiryo', sans-serif; font-size: 34px; font-weight: bold; margin-top: 40px; margin-left: 15px; margin-right: 15px; margin-bottom: 15px; color: #ffffff; background-color: transparent; padding: 15px;"
         )
-        self.layout.addWidget(title)
+        
+        # ロゴエリア（早稲田ロゴ + メインロゴ）
+        logo_container = QtWidgets.QWidget()
+        logo_layout = QtWidgets.QVBoxLayout(logo_container)
+        logo_layout.setSpacing(0)  # ロゴ間のスペース（負の値で重なりを作る）
+        logo_layout.setContentsMargins(30, 20, 20, 20)
+        
+        # 早稲田ロゴ（上部）
+        waseda_logo_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "picture", "waseda_logo.png")
+        if os.path.exists(waseda_logo_path):
+            self.waseda_logo_widget = QtWidgets.QLabel()
+            pixmap = QtGui.QPixmap(waseda_logo_path)
+            scaled_pixmap = pixmap.scaled(160, 80, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
+            self.waseda_logo_widget.setPixmap(scaled_pixmap)
+            self.waseda_logo_widget.setAlignment(QtCore.Qt.AlignCenter)
+            self.waseda_logo_widget.setStyleSheet("background-color: transparent;")
+            logo_layout.addWidget(self.waseda_logo_widget)
+        
+        # メインロゴ（下部）
+        logo_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "picture", "rsl_logo.svg")
+        if os.path.exists(logo_path):
+            self.logo_widget = QtSvgWidgets.QSvgWidget(logo_path)
+            self.logo_widget.setFixedSize(160, 160)  # ロゴのサイズを設定
+            self.logo_widget.setStyleSheet("background-color: transparent;")
+        else:
+            # SVGファイルが見つからない場合は代替テキストを表示
+            self.logo_widget = QtWidgets.QLabel("LOGO")
+            self.logo_widget.setFixedSize(160, 160)
+            self.logo_widget.setAlignment(QtCore.Qt.AlignCenter)
+            self.logo_widget.setStyleSheet(
+                "border: 2px solid #3498db; border-radius: 60px; font-size: 16px; font-weight: bold; color: #3498db; background-color: #000000;"
+            )
+        logo_layout.addWidget(self.logo_widget)
+        
+        # ヘッダーレイアウトに追加
+        header_layout.addWidget(title)
+        header_layout.addStretch()  # タイトルとロゴの間にスペースを作る
+        header_layout.addWidget(logo_container)
+        
+        self.layout.addWidget(header_widget)
 
         # 状態表示エリア
         self.status_widget = QtWidgets.QWidget()
         status_layout = QtWidgets.QHBoxLayout(self.status_widget)
 
         self.status_icon = QtWidgets.QLabel("[待機]")
-        self.status_icon.setStyleSheet("font-size: 18px; font-weight: bold; color: #3498db; padding: 10px;")
+        self.status_icon.setStyleSheet("font-family: 'Yu Gothic UI', 'Meiryo', 'Hiragino Sans', 'Arial', sans-serif; font-size: 20px; font-weight: bold; color: #3498db; padding: 10px; background-color: transparent;")
         self.status_text = QtWidgets.QLabel("待機中...")
-        self.status_text.setStyleSheet("font-size: 18px; color: #7f8c8d; padding: 10px;")
+        self.status_text.setStyleSheet("font-family: 'Yu Gothic UI', 'Meiryo', 'Hiragino Sans', 'Arial', sans-serif; font-size: 20px; color: #cccccc; padding: 10px; background-color: transparent;")
 
         status_layout.addWidget(self.status_icon)
         status_layout.addWidget(self.status_text)
         status_layout.addStretch()
 
         self.layout.addWidget(self.status_widget)
+
+        # 音声レベル表示エリア
+        audio_container = QtWidgets.QWidget()
+        audio_layout = QtWidgets.QVBoxLayout(audio_container)
+        audio_layout.setContentsMargins(20, 10, 20, 10)
+        
+        # タイトルラベル
+        audio_title = QtWidgets.QLabel("音声レベル", alignment=QtCore.Qt.AlignCenter)
+        audio_title.setStyleSheet("font-size: 16px; color: #cccccc; margin-bottom: 10px; background-color: transparent;")
+        audio_layout.addWidget(audio_title)
+        
+        # 音声レベルバーのコンテナ
+        bars_container = QtWidgets.QWidget()
+        bars_layout = QtWidgets.QHBoxLayout(bars_container)
+        bars_layout.setSpacing(3)
+        bars_layout.setContentsMargins(0, 0, 0, 0)
+        
+        # 複数の縦棒グラフを作成
+        self.audio_bars = []
+        for i in range(NUM_BARS):
+            bar = QtWidgets.QProgressBar()
+            bar.setOrientation(QtCore.Qt.Vertical)
+            bar.setFixedSize(15, 80)
+            bar.setMinimum(0)
+            bar.setMaximum(100)
+            bar.setValue(0)
+            bar.setTextVisible(False)
+            bar.setStyleSheet("""
+                QProgressBar {
+                    background-color: #2c3e50;
+                    border: 1px solid #34495e;
+                    border-radius: 3px;
+                }
+                QProgressBar::chunk {
+                    background-color: #2c3e50;
+                    border-radius: 2px;
+                }
+            """)
+            self.audio_bars.append(bar)
+            bars_layout.addWidget(bar)
+        
+        audio_layout.addWidget(bars_container)
+        self.layout.addWidget(audio_container)
 
 
         # テスト用: サークル情報エリアが正しく表示されるかテスト
@@ -61,9 +247,9 @@ class ChatUI(QtWidgets.QWidget):
 
         # ボタンの説明テキスト
         self.button_instruction = QtWidgets.QLabel(
-            "クリックして音声で話しかけてください", alignment=QtCore.Qt.AlignCenter
+            "ボタンを押して「こんにちは」と話しかけてね", alignment=QtCore.Qt.AlignCenter
         )
-        self.button_instruction.setStyleSheet("font-size: 16px; color: #7f8c8d; margin: 10px;")
+        self.button_instruction.setStyleSheet("font-family: 'Yu Gothic UI', 'Meiryo', 'Hiragino Sans', 'Arial', sans-serif; font-size: 18px; color: #cccccc; margin: 10px; background-color: transparent;")
         button_layout.addWidget(self.button_instruction)
 
         # 大きな円形の録音ボタン
@@ -72,18 +258,21 @@ class ChatUI(QtWidgets.QWidget):
         self.button.setSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
         self.button.setStyleSheet("""
             QPushButton {
-                background-color: #3498db;
+                background: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
+                    stop: 0 #4a90e2, stop: 1 #1e3a8a);
                 color: white;
                 border: none;
                 border-radius: 90px;
-                font-size: 24px;
+                font-size: 28px;
                 font-weight: bold;
             }
             QPushButton:hover {
-                background-color: #2980b9;
+                background: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
+                    stop: 0 #5ba0f2, stop: 1 #2e4a9a);
             }
             QPushButton:pressed {
-                background-color: #21618c;
+                background: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
+                    stop: 0 #2e4a9a, stop: 1 #1a2d6a);
             }
         """)
         self.button.clicked.connect(self.handle_button_click)
@@ -100,79 +289,175 @@ class ChatUI(QtWidgets.QWidget):
         # サークル情報が表示されているかのフラグ
         self.clubs_displayed = False
         
+        # 初回状態かどうかを示すフラグ
+        self.is_first_interaction = True
+        
+        # 録音停止直後の処理待ち状態フラグ
+        self.is_processing_after_recording = False
+        
+        # マイクアイコンを読み込み
+        self.setup_mic_icon()
+        
+        # 背景画像を読み込み
+        self.setup_background_image()
+
+    def setup_background_image(self):
+        """背景画像を読み込み"""
+        background_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "picture", "background1.png")
+        if os.path.exists(background_path):
+            self.background = QPixmap(background_path)
+        else:
+            # 画像が見つからない場合は空のPixmapを設定
+            self.background = QPixmap()
+            print(f"背景画像が見つかりません: {background_path}")
+
+    def paintEvent(self, event):
+        """背景画像またはグラデーションを描画"""
+        painter = QPainter(self)
+        
+        if not self.background.isNull():
+            # 背景画像がある場合は画像を描画
+            # ウィンドウサイズに合わせて拡大縮小
+            scaled = self.background.scaled(self.size(), Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
+            painter.drawPixmap(0, 0, scaled)
+        else:
+            # 背景画像がない場合はグラデーションを描画
+            gradient = QLinearGradient(QPoint(0, 0), QPoint(0, self.height()))
+            gradient.setColorAt(0, QColor("#750000"))   # 上部の色
+            gradient.setColorAt(1, QColor("#3e0000"))   # 下部の色
+            painter.fillRect(self.rect(), gradient)
+
+    def setup_mic_icon(self):
+        """マイクアイコンとサウンドアイコンを読み込み"""
+        # マイクアイコンを読み込み
+        mic_icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "picture", "mic.svg")
+        if os.path.exists(mic_icon_path):
+            self.mic_icon = QtGui.QIcon(mic_icon_path)
+        else:
+            # SVGファイルが見つからない場合は空のアイコンを設定
+            self.mic_icon = QtGui.QIcon()
+        
+        # サウンドアイコンを読み込み
+        sound_icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "picture", "sound.svg")
+        if os.path.exists(sound_icon_path):
+            self.sound_icon = QtGui.QIcon(sound_icon_path)
+        else:
+            # SVGファイルが見つからない場合は空のアイコンを設定
+            self.sound_icon = QtGui.QIcon()
+
+    def _set_button_content(self, icon=None, text="", icon_size=(60, 60)):
+        """ボタンのアイコンまたはテキストを設定する共通メソッド"""
+        if icon and not icon.isNull():
+            self.button.setIcon(icon)
+            self.button.setIconSize(QtCore.QSize(*icon_size))
+            self.button.setText("")  # アイコン使用時はテキストを非表示
+        else:
+            self.button.setIcon(QtGui.QIcon())  # アイコンをクリア
+            self.button.setText(text)
 
     def update_status(self):
         """チャットボットの状態に応じてUIを更新"""
         if self.clubs_displayed:
             # サークル情報が表示されている時は終了ボタンとして表示
             self.status_icon.setText("[完了]")
-            self.status_icon.setStyleSheet("font-size: 18px; font-weight: bold; color: #27ae60; padding: 10px;")
+            self.status_icon.setStyleSheet("font-size: 20px; font-weight: bold; color: #27ae60; padding: 10px; background-color: transparent;")
             self.status_text.setText("サークル情報を確認してください")
-            self.status_text.setStyleSheet("font-size: 18px; color: #27ae60; padding: 10px;")
+            self.status_text.setStyleSheet("font-size: 20px; color: #27ae60; padding: 10px; background-color: transparent;")
             self.button.setEnabled(True)
-            self.button.setText("終了")
+            self._set_button_content(text="終了")
             self.button_instruction.setText("アプリを終了するにはボタンをクリックしてください")
             self._update_exit_button_style()
         elif self.chatbot.is_recording:
             self.status_icon.setText("[録音中]")
-            self.status_icon.setStyleSheet("font-size: 18px; font-weight: bold; color: #e74c3c; padding: 10px;")
+            self.status_icon.setStyleSheet("font-size: 20px; font-weight: bold; color: #e74c3c; padding: 10px; background-color: transparent;")
             self.status_text.setText("録音中... 話してください")
-            self.status_text.setStyleSheet("font-size: 18px; color: #e74c3c; font-weight: bold; padding: 10px;")
+            self.status_text.setStyleSheet("font-size: 20px; color: #e74c3c; font-weight: bold; padding: 10px; background-color: transparent;")
             self.button.setEnabled(True)  # 録音中は停止ボタンとして有効
-            self.button.setText("停止")
+            self._set_button_content(text="STOP")
             self.button_instruction.setText("録音を停止するにはボタンをクリックしてください")
+            self._update_recording_button_style()
+            # 録音中は音声レベル表示を開始
+            self.start_audio_stream()
         elif hasattr(self.chatbot, "is_speaking") and self.chatbot.is_speaking:
             self.status_icon.setText("[ワセクラ発話中]")
-            self.status_icon.setStyleSheet("font-size: 18px; font-weight: bold; color: #27ae60; padding: 10px;")
+            self.status_icon.setStyleSheet("font-size: 20px; font-weight: bold; color: #27ae60; padding: 10px; background-color: transparent;")
             self.status_text.setText("ワセクラが話しています...")
-            self.status_text.setStyleSheet("font-size: 18px; color: #27ae60; padding: 10px;")
+            self.status_text.setStyleSheet("font-size: 20px; color: #27ae60; padding: 10px; background-color: transparent;")
             self.button.setEnabled(False)  # 発話中はボタン無効
-            self.button.setText("話す!")
+            self._set_button_content(icon=self.sound_icon, text="待っててね!")
             self.button_instruction.setText("ワセクラの発話が終わるまでお待ちください")
             self._update_button_disabled_style()
+            # 発話中は音声レベル表示を停止
+            self.stop_audio_stream()
         elif hasattr(self.chatbot, "is_processing") and self.chatbot.is_processing:
             self.status_icon.setText("[処理中]")
-            self.status_icon.setStyleSheet("font-size: 18px; font-weight: bold; color: #9b59b6; padding: 10px;")
+            self.status_icon.setStyleSheet("font-size: 20px; font-weight: bold; color: #9b59b6; padding: 10px; background-color: transparent;")
             self.status_text.setText("ワセクラが考え中...")
-            self.status_text.setStyleSheet("font-size: 18px; color: #9b59b6; padding: 10px;")
+            self.status_text.setStyleSheet("font-size: 20px; color: #9b59b6; padding: 10px; background-color: transparent;")
             self.button.setEnabled(False)  # 処理中はボタン無効
-            self.button.setText("処理中...")
+            self._set_button_content(text="...")
             self.button_instruction.setText("ワセクラが処理中です... しばらくお待ちください")
             self._update_button_disabled_style()
+            # 処理中は音声レベル表示を停止
+            self.stop_audio_stream()
+            # 実際の処理状態になったら録音停止後フラグをリセット
+            self.is_processing_after_recording = False
+        elif self.is_processing_after_recording:
+            # 録音停止直後の処理待ち状態
+            self.status_icon.setText("[処理中]")
+            self.status_icon.setStyleSheet("font-size: 20px; font-weight: bold; color: #9b59b6; padding: 10px; background-color: transparent;")
+            self.status_text.setText("ワセクラが考え中...")
+            self.status_text.setStyleSheet("font-size: 20px; color: #9b59b6; padding: 10px; background-color: transparent;")
+            self.button.setEnabled(False)  # 処理中はボタン無効
+            self._set_button_content(text="...")
+            self.button_instruction.setText("ワセクラが処理中です... しばらくお待ちください")
+            self._update_button_disabled_style()
+            # 処理中は音声レベル表示を停止
+            self.stop_audio_stream()
         elif self.chatbot.is_listening and not self.chatbot.is_recording:
             self.status_icon.setText("[待機]")
-            self.status_icon.setStyleSheet("font-size: 18px; font-weight: bold; color: #f39c12; padding: 10px;")
-            self.status_text.setText("音声待機中... ボタンを押して話してください")
-            self.status_text.setStyleSheet("font-size: 18px; color: #f39c12; padding: 10px;")
+            self.status_icon.setStyleSheet("font-size: 20px; font-weight: bold; color: #f39c12; padding: 10px; background-color: transparent;")
+            self.status_text.setText("音声待機中...")
+            self.status_text.setStyleSheet("font-size: 20px; color: #f39c12; padding: 10px; background-color: transparent;")
             self.button.setEnabled(True)  # 待機中はボタン有効
-            self.button.setText("話す!")
-            self.button_instruction.setText("クリックして音声で話しかけてください")
-            if self.button.text() != "停止":  # 録音中でない場合のみスタイルを復元
-                self._restore_normal_button_style()
+            self._set_button_content(icon=self.mic_icon, text="マイク")
+            if self.is_first_interaction:
+                self.button_instruction.setText("ボタンを押して「こんにちは」と話してみよう！")
+            else:
+                self.button_instruction.setText("クリックして話しかけてください")
+            self._restore_normal_button_style()
+            # 待機中は音声レベル表示を停止
+            self.stop_audio_stream()
         else:
             self.status_icon.setText("[待機]")
-            self.status_icon.setStyleSheet("font-size: 18px; font-weight: bold; color: #3498db; padding: 10px;")
-            self.status_text.setText("待機中...")
-            self.status_text.setStyleSheet("font-size: 18px; color: #7f8c8d; padding: 10px;")
+            self.status_icon.setStyleSheet("font-size: 20px; font-weight: bold; color: #f39c12; padding: 10px; background-color: transparent;")
+            self.status_text.setText("音声待機中...")
+            self.status_text.setStyleSheet("font-size: 20px; color: #f39c12; padding: 10px; background-color: transparent;")
             self.button.setEnabled(True)  # 通常時はボタン有効
-            if self.button.text() != "停止":  # 録音中でない場合のみ
-                self.button.setText("話す!")
-                self.button_instruction.setText("クリックして音声で話しかけてください")
-                self._restore_normal_button_style()
+            self._set_button_content(icon=self.mic_icon, text="話す!")
+            if self.is_first_interaction:
+                self.button_instruction.setText("ボタンを押して「こんにちは」と話しかけてね")
+            else:
+                self.button_instruction.setText("ボタンを押して話しかけてください")
+            self._restore_normal_button_style()
+            # 通常待機中は音声レベル表示を停止
+            self.stop_audio_stream()
 
     def _update_button_disabled_style(self):
         """ボタンが無効な時のスタイルを設定"""
         self.button.setStyleSheet("""
             QPushButton {
-                background-color: #bdc3c7;
+                background: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
+                    stop: 0 #bdc3c7, stop: 1 #95a5a6);
                 color: #7f8c8d;
                 border: none;
                 border-radius: 90px;
-                font-size: 24px;
+                font-size: 28px;
                 font-weight: bold;
             }
             QPushButton:disabled {
-                background-color: #bdc3c7;
+                background: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
+                    stop: 0 #bdc3c7, stop: 1 #95a5a6);
                 color: #7f8c8d;
             }
         """)
@@ -180,12 +465,14 @@ class ChatUI(QtWidgets.QWidget):
     def update_realtime_text(self, text):
         """リアルタイム音声認識結果を更新（削除済みのため何もしない）"""
         pass
-    
+
     def _reset_app(self):
         """アプリをリーセットする"""
         self._restore_normal_button_style()
         self.clubs_displayed=False
         self.chatbot.running=False
+        self.is_first_interaction=True
+        self.is_processing_after_recording = False
 
     def handle_button_click(self):
         """ボタンクリックを処理（録音開始/停止 or アプリ終了）"""
@@ -204,28 +491,46 @@ class ChatUI(QtWidgets.QWidget):
             return
 
         if not self.chatbot.is_recording:
-            self.chatbot.start_recording()
+            # 初回の場合はフラグを更新
+            if self.is_first_interaction:
+                self.is_first_interaction = False
+            
+            # 録音開始時に即座にボタンと説明文を同時に変更（ラグを防ぐため）
+            self._set_button_content(text="STOP")
             self._update_recording_button_style()
+            self.button_instruction.setText("録音を停止するにはボタンをクリックしてください")
+            
+            self.chatbot.start_recording()
         else:
+            # 録音停止時も即座にボタンと説明文を変更
+            self._set_button_content(text="...")
+            self._update_button_disabled_style()
+            self.button_instruction.setText("ワセクラが処理中です... しばらくお待ちください")
+            
+            # 録音停止（update_statusメソッドが自動的に適切な状態に更新）
             self.chatbot.stop_recording()
-            self._restore_normal_button_style()
+            # 録音停止直後は処理待ち状態として表示
+            self.is_processing_after_recording = True
 
     def _update_recording_button_style(self):
         """録音中のボタンスタイルを設定"""
         self.button.setStyleSheet("""
             QPushButton {
-                background-color: #e74c3c;
+                background: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
+                    stop: 0 #c0392b, stop: 1 #922b20);
                 color: white;
                 border: none;
                 border-radius: 90px;
-                font-size: 24px;
+                font-size: 28px;
                 font-weight: bold;
             }
             QPushButton:hover {
-                background-color: #c0392b;
+                background: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
+                    stop: 0 #d35400, stop: 1 #a93226);
             }
             QPushButton:pressed {
-                background-color: #a93226;
+                background: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
+                    stop: 0 #a93226, stop: 1 #7f1d1d);
             }
         """)
 
@@ -233,18 +538,21 @@ class ChatUI(QtWidgets.QWidget):
         """通常時のボタンスタイルを復元"""
         self.button.setStyleSheet("""
             QPushButton {
-                background-color: #3498db;
+                background: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
+                    stop: 0 #4a90e2, stop: 1 #1e3a8a);
                 color: white;
                 border: none;
                 border-radius: 90px;
-                font-size: 24px;
+                font-size: 28px;
                 font-weight: bold;
             }
             QPushButton:hover {
-                background-color: #2980b9;
+                background: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
+                    stop: 0 #5ba0f2, stop: 1 #2e4a9a);
             }
             QPushButton:pressed {
-                background-color: #21618c;
+                background: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
+                    stop: 0 #2e4a9a, stop: 1 #1a2d6a);
             }
         """)
 
@@ -252,18 +560,21 @@ class ChatUI(QtWidgets.QWidget):
         """終了ボタンのスタイルを設定"""
         self.button.setStyleSheet("""
             QPushButton {
-                background-color: #e74c3c;
+                background: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
+                    stop: 0 #e74c3c, stop: 1 #a93226);
                 color: white;
                 border: none;
                 border-radius: 90px;
-                font-size: 24px;
+                font-size: 28px;
                 font-weight: bold;
             }
             QPushButton:hover {
-                background-color: #c0392b;
+                background: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
+                    stop: 0 #f05d4e, stop: 1 #c0392b);
             }
             QPushButton:pressed {
-                background-color: #a93226;
+                background: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
+                    stop: 0 #c0392b, stop: 1 #7f1d1d);
             }
         """)
 
@@ -279,6 +590,18 @@ class ChatUI(QtWidgets.QWidget):
         modal.setWindowTitle("おすすめのサークル")
         modal.setModal(True)
         modal.resize(1500, 1000)  # モーダルのサイズを設定
+        
+        # モーダルのダークテーマ設定
+        modal.setStyleSheet("""
+            QDialog {
+                background-color: #000000;
+                color: #ffffff;
+            }
+            QLabel {
+                background-color: transparent;
+                color: #ffffff;
+            }
+        """)
 
         # モーダルのレイアウト
         modal_layout = QtWidgets.QVBoxLayout(modal)
@@ -286,7 +609,7 @@ class ChatUI(QtWidgets.QWidget):
         # タイトル
         self.club_info_title = QtWidgets.QLabel("あなたにおすすめのサークル", alignment=QtCore.Qt.AlignCenter)
         self.club_info_title.setStyleSheet(
-            "font-size: 24px; font-weight: bold; color: white; margin: 10px; padding: 10px;"
+            "font-family: 'Yu Gothic UI', 'Meiryo', 'Hiragino Sans', 'Arial', sans-serif; font-size: 28px; font-weight: bold; color: #ffffff; margin: 10px; padding: 10px; background-color: transparent;"
         )
         
         modal_layout.addWidget(self.club_info_title)
@@ -296,10 +619,11 @@ class ChatUI(QtWidgets.QWidget):
         scroll_area.setWidgetResizable(True)
         scroll_area.setStyleSheet("""
             QScrollArea {
-                background-color: #f8f9fa;
+                background-color: #1a1a1a;
                 border-radius: 10px;
                 min-height: 600px;
                 max-height: 800px;
+                border: 1px solid #333333;
             }
         """)
 
@@ -320,7 +644,7 @@ class ChatUI(QtWidgets.QWidget):
             no_clubs_label = QtWidgets.QLabel(
                 "申し訳ございませんが、条件に合うサークルが見つかりませんでした。", alignment=QtCore.Qt.AlignCenter
             )
-            no_clubs_label.setStyleSheet("font-size: 16px; color: #e74c3c; padding: 20px;")
+            no_clubs_label.setStyleSheet("font-size: 18px; color: #e74c3c; padding: 20px; background-color: transparent;")
             self.club_content_layout.addWidget(no_clubs_label)
             print("[UI DEBUG] No clubs message added")
         else:
@@ -330,8 +654,8 @@ class ChatUI(QtWidgets.QWidget):
                 club_frame = QtWidgets.QFrame()
                 club_frame.setStyleSheet("""
                     QFrame {
-                        background-color: white;
-                        border: 1px solid #dee2e6;
+                        background-color: #2a2a2a;
+                        border: 1px solid #444444;
                         border-radius: 8px;
                         margin: 5px;
                         padding: 10px;
@@ -346,14 +670,14 @@ class ChatUI(QtWidgets.QWidget):
 
                 # サークル名
                 club_name = QtWidgets.QLabel(f"📍 {club.get('サークル', 'N/A')}")
-                club_name.setStyleSheet("font-size: 18px; font-weight: bold; color: #2c3e50; margin-bottom: 5px;")
+                club_name.setStyleSheet("font-size: 20px; font-weight: bold; color: #ffffff; margin-bottom: 5px; background-color: transparent;")
                 club_layout.addWidget(club_name)
 
                 # 活動内容
                 activity_content = club.get("活動内容", "N/A")
                 if activity_content != "N/A":
                     activity_label = QtWidgets.QLabel(f"🎯 活動内容: {activity_content}")
-                    activity_label.setStyleSheet("font-size: 14px; color: #34495e; margin: 3px 0; padding-left: 10px;")
+                    activity_label.setStyleSheet("font-size: 16px; color: #cccccc; margin: 3px 0; padding-left: 10px; background-color: transparent;")
                     activity_label.setWordWrap(True)
                     club_layout.addWidget(activity_label)
 
@@ -361,7 +685,7 @@ class ChatUI(QtWidgets.QWidget):
                 schedule = club.get("活動日時・場所", "N/A")
                 if schedule != "N/A":
                     schedule_label = QtWidgets.QLabel(f"🕒 活動日時・場所: {schedule}")
-                    schedule_label.setStyleSheet("font-size: 14px; color: #34495e; margin: 3px 0; padding-left: 10px;")
+                    schedule_label.setStyleSheet("font-size: 16px; color: #cccccc; margin: 3px 0; padding-left: 10px; background-color: transparent;")
                     schedule_label.setWordWrap(True)
                     club_layout.addWidget(schedule_label)
 
@@ -372,7 +696,7 @@ class ChatUI(QtWidgets.QWidget):
                     labels_text = f"🏷️ カテゴリ: {label2}" + (f" / {label1}" if label1 != "N/A" else "")
                     labels_label = QtWidgets.QLabel(labels_text)
                     labels_label.setStyleSheet(
-                        "font-size: 13px; color: #7f8c8d; margin: 5px 0; padding-left: 10px; font-style: italic;"
+                        "font-size: 15px; color: #aaaaaa; margin: 5px 0; padding-left: 10px; font-style: italic; background-color: transparent;"
                     )
                     club_layout.addWidget(labels_label)
 
@@ -388,7 +712,7 @@ class ChatUI(QtWidgets.QWidget):
 
         # 閉じるボタン
         close_button = QtWidgets.QPushButton("閉じる")
-        close_button.setStyleSheet("font-size: 16px; padding: 10px; background-color: #e74c3c; color: white; border-radius: 5px;")
+        close_button.setStyleSheet("font-size: 18px; padding: 10px; background-color: #e74c3c; color: white; border-radius: 5px; border: none;")
         close_button.clicked.connect(modal.close)
         modal_layout.addWidget(close_button, alignment=QtCore.Qt.AlignCenter)
 
@@ -429,3 +753,8 @@ class ChatUI(QtWidgets.QWidget):
         """外部からサークルデータを受信し、Signalを発行"""
         print(f"[UI DEBUG] receive_club_data called with {len(clubs)} clubs")
         self.club_data_received.emit(clubs)
+
+    def closeEvent(self, event):
+        """ウィンドウが閉じられたときに音声レベル表示を停止"""
+        self.stop_audio_stream()
+        super().closeEvent(event)
