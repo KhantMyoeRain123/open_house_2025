@@ -109,6 +109,7 @@ The main application is found under the `app` folder and in the file `main.py`.
 
 New process!!
 
+(Linux ver)
 フォントを使うために... (to use font)
 mkdir -p ~/.fonts
 フォント用のフォルダを作る (make folder for font)
@@ -119,5 +120,11 @@ https://fonts.google.com/specimen/Kosugi+Maru
 .fontsで (go .fonts and do this)
 fc-cache -fv
 を実行
+
+
+(mac ver)
+
+https://fonts.google.com/specimen/Kosugi+Maru
+ここにアクセスして、ダウンロードして、Library/Fontsにおく (access this URL. download and place in the Library/Fonts)
 
 これをやると今設定しているフォントが使えるようになるはず
