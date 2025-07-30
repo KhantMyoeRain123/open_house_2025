@@ -2,6 +2,7 @@ from PySide6 import QtCore, QtWidgets, QtSvgWidgets, QtGui
 from PySide6.QtGui import QPainter, QLinearGradient, QColor, QPixmap
 from PySide6.QtCore import QPoint, Qt
 import os
+import random
 
 # --- 音声レベル表示用の定数設定 ---
 NUM_BARS = 20         # 表示する棒グラフの数
@@ -27,6 +28,36 @@ class ChatUI(QtWidgets.QWidget):
         self.status_timer = QtCore.QTimer()
         self.status_timer.timeout.connect(self.update_status)
         self.status_timer.start(100)  # 100ms間隔で更新
+        
+        # 質問進捗管理
+        self.total_questions = 5  # 実際の質問数（挨拶は除く）
+        self.current_question = 0
+        
+        # ランダム画像表示の初期化
+        self.setup_random_images()
+        
+        # 前回の状態を記録（画像表示タイミング判定用）
+        self.previous_status = None
+
+    def setup_random_images(self):
+        """ランダム画像表示の初期化"""
+        # 画像フォルダのパス
+        self.club_images_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "picture", "club")
+        
+        # 利用可能な画像ファイルを取得
+        self.available_images = []
+        if os.path.exists(self.club_images_path):
+            for filename in os.listdir(self.club_images_path):
+                if filename.lower().endswith(('.png', '.jpg', '.jpeg')):
+                    self.available_images.append(filename)
+        
+        # 表示位置の定義（右上、右下、左下）
+        self.display_positions = ['top-right', 'bottom-right', 'bottom-left']
+        self.used_positions = []  # 使用済み位置を記録
+        self.used_images = []  # 使用済み画像を記録
+        
+        # 現在表示中の画像ウィジェットリスト
+        self.displayed_image_widgets = []
 
     def setup_audio_waveform(self):
         """音声レベル表示の初期化（チャットボットから音声レベルを受け取る）"""
@@ -64,9 +95,102 @@ class ChatUI(QtWidgets.QWidget):
                 """)
         self.audio_level = 0.0
 
+    def show_random_club_image(self):
+        """ランダムなサークル画像を表示"""
+        if not self.available_images:
+            return
+        
+        # 使用可能な位置をチェック
+        if len(self.used_positions) >= len(self.display_positions):
+            # すべての位置が使用済みの場合は表示しない
+            return
+        
+        # 未使用の画像をフィルタリング
+        available_images = [img for img in self.available_images if img not in self.used_images]
+        
+        # 未使用の画像がない場合は使用済みリストをリセット
+        if not available_images:
+            self.used_images.clear()
+            available_images = self.available_images.copy()
+        
+        # ランダムに画像を選択
+        random_image = random.choice(available_images)
+        self.used_images.append(random_image)
+        image_path = os.path.join(self.club_images_path, random_image)
+        
+        # 未使用の位置からランダムに選択
+        available_positions = [pos for pos in self.display_positions if pos not in self.used_positions]
+        position = random.choice(available_positions)
+        self.used_positions.append(position)
+        
+        # 画像ウィジェットを作成
+        image_widget = QtWidgets.QLabel(self)
+        pixmap = QtGui.QPixmap(image_path)
+        
+        # 画像サイズを調整（180x180ピクセル）
+        scaled_pixmap = pixmap.scaled(180, 180, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
+        
+        # ランダムな角度で回転（-30度から30度）
+        rotation_angle = random.uniform(-15, 15)
+        transform = QtGui.QTransform()
+        transform.rotate(rotation_angle)
+        rotated_pixmap = scaled_pixmap.transformed(transform, QtCore.Qt.SmoothTransformation)
+        
+        image_widget.setPixmap(rotated_pixmap)
+        # 回転後のサイズに合わせて調整
+        image_widget.setFixedSize(rotated_pixmap.size())
+        image_widget.setStyleSheet("""
+            QLabel {
+                background-color: transparent;
+                border: none;
+            }
+        """)
+        
+        # 位置を設定
+        self.position_image_widget(image_widget, position)
+        
+        # ウィジェットを表示
+        image_widget.show()
+        
+        # 表示中のウィジェットリストに追加
+        self.displayed_image_widgets.append(image_widget)
+        
+        print(f"[DEBUG] Displayed club image: {random_image} at position: {position} with rotation: {rotation_angle:.1f}°")
+
+    def position_image_widget(self, widget, position):
+        """画像ウィジェットを指定位置に配置"""
+        margin = 80  # 画面端からの余白を大きくして中央寄りに
+        
+        if position == 'top-right':
+            x = self.width() - widget.width() - margin
+            y = margin + 120  # ヘッダーを避けて配置（少し下に移動）
+        elif position == 'bottom-right':
+            x = self.width() - widget.width() - margin
+            y = self.height() - widget.height() - margin  # ボタンエリアを避けつつさらに下寄りに配置
+        elif position == 'bottom-left':
+            x = margin
+            y = self.height() - widget.height() - margin  # ボタンエリアを避けつつさらに下寄りに配置
+        
+        widget.move(x, y)
+
+    def clear_club_images(self):
+        """表示中のサークル画像をすべて削除"""
+        for widget in self.displayed_image_widgets:
+            widget.setParent(None)
+            widget.deleteLater()
+        
+        self.displayed_image_widgets.clear()
+        self.used_positions.clear()
+        self.used_images.clear()  # 使用済み画像もクリア
+        print("[DEBUG] Cleared all club images")
+
     def update_audio_level(self, level):
         """チャットボットから音声レベルを受け取る"""
         self.audio_level = level
+
+    def update_question_progress(self, current, total, percentage):
+        """質問進捗の更新（バーは削除済みなので空処理）"""
+        pass
 
     def update_audio_bars(self):
         """音声レベルバーを更新する関数"""
@@ -134,7 +258,7 @@ class ChatUI(QtWidgets.QWidget):
         # タイトル
         title = QtWidgets.QLabel("ワセクラ - 早稲田大学サークル推薦AI", alignment=QtCore.Qt.AlignCenter)
         title.setStyleSheet(
-            "font-family: 'Noto Serif CJK TC SemiBold', 'Kosugi Maru', 'Meiryo', sans-serif; font-size: 34px; font-weight: bold; margin-top: 40px; margin-left: 15px; margin-right: 15px; margin-bottom: 15px; color: #ffffff; background-color: transparent; padding: 15px;"
+            "font-family: 'Kosugi Maru', 'Kosugi Maru', 'Meiryo', sans-serif; font-size: 34px; font-weight: bold; margin-top: 40px; margin-left: 15px; margin-right: 15px; margin-bottom: 15px; color: #000000; background-color: transparent; padding: 15px;"
         )
         
         # ロゴエリア（早稲田ロゴ + メインロゴ）
@@ -155,7 +279,7 @@ class ChatUI(QtWidgets.QWidget):
             logo_layout.addWidget(self.waseda_logo_widget)
         
         # メインロゴ（下部）
-        logo_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "picture", "rsl_logo.svg")
+        logo_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "picture", "rsl_logo_black.svg")
         if os.path.exists(logo_path):
             self.logo_widget = QtSvgWidgets.QSvgWidget(logo_path)
             self.logo_widget.setFixedSize(160, 160)  # ロゴのサイズを設定
@@ -249,7 +373,7 @@ class ChatUI(QtWidgets.QWidget):
         self.button_instruction = QtWidgets.QLabel(
             "ボタンを押して「こんにちは」と話しかけてね", alignment=QtCore.Qt.AlignCenter
         )
-        self.button_instruction.setStyleSheet("font-family: 'Yu Gothic UI', 'Meiryo', 'Hiragino Sans', 'Arial', sans-serif; font-size: 18px; color: #cccccc; margin: 10px; background-color: transparent;")
+        self.button_instruction.setStyleSheet("font-family: 'Yu Gothic UI', 'Meiryo', 'Hiragino Sans', 'Arial', sans-serif; font-size: 18px; color: #000000; margin: 10px; background-color: transparent;")
         button_layout.addWidget(self.button_instruction)
 
         # 大きな円形の録音ボタン
@@ -303,7 +427,7 @@ class ChatUI(QtWidgets.QWidget):
 
     def setup_background_image(self):
         """背景画像を読み込み"""
-        background_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "picture", "background1.png")
+        background_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "picture", "background3.png")
         if os.path.exists(background_path):
             self.background = QPixmap(background_path)
         else:
@@ -345,6 +469,11 @@ class ChatUI(QtWidgets.QWidget):
             # SVGファイルが見つからない場合は空のアイコンを設定
             self.sound_icon = QtGui.QIcon()
 
+    def _set_button_instruction_text(self, text):
+        """ボタン説明文を設定し、色を黒に固定"""
+        self.button_instruction.setText(text)
+        self.button_instruction.setStyleSheet("font-family: 'Yu Gothic UI', 'Meiryo', 'Hiragino Sans', 'Arial', sans-serif; font-size: 18px; color: #000000; margin: 10px; background-color: transparent;")
+
     def _set_button_content(self, icon=None, text="", icon_size=(60, 60)):
         """ボタンのアイコンまたはテキストを設定する共通メソッド"""
         if icon and not icon.isNull():
@@ -365,7 +494,7 @@ class ChatUI(QtWidgets.QWidget):
             self.status_text.setStyleSheet("font-size: 20px; color: #27ae60; padding: 10px; background-color: transparent;")
             self.button.setEnabled(True)
             self._set_button_content(text="終了")
-            self.button_instruction.setText("アプリを終了するにはボタンをクリックしてください")
+            self._set_button_instruction_text("アプリを終了するにはボタンをクリックしてください")
             self._update_exit_button_style()
         elif self.chatbot.is_recording:
             self.status_icon.setText("[録音中]")
@@ -374,7 +503,7 @@ class ChatUI(QtWidgets.QWidget):
             self.status_text.setStyleSheet("font-size: 20px; color: #e74c3c; font-weight: bold; padding: 10px; background-color: transparent;")
             self.button.setEnabled(True)  # 録音中は停止ボタンとして有効
             self._set_button_content(text="STOP")
-            self.button_instruction.setText("録音を停止するにはボタンをクリックしてください")
+            self._set_button_instruction_text("録音を停止するにはボタンをクリックしてください")
             self._update_recording_button_style()
             # 録音中は音声レベル表示を開始
             self.start_audio_stream()
@@ -385,7 +514,7 @@ class ChatUI(QtWidgets.QWidget):
             self.status_text.setStyleSheet("font-size: 20px; color: #27ae60; padding: 10px; background-color: transparent;")
             self.button.setEnabled(False)  # 発話中はボタン無効
             self._set_button_content(icon=self.sound_icon, text="待っててね!")
-            self.button_instruction.setText("ワセクラの発話が終わるまでお待ちください")
+            self._set_button_instruction_text("ワセクラの発話が終わるまでお待ちください")
             self._update_button_disabled_style()
             # 発話中は音声レベル表示を停止
             self.stop_audio_stream()
@@ -396,7 +525,7 @@ class ChatUI(QtWidgets.QWidget):
             self.status_text.setStyleSheet("font-size: 20px; color: #9b59b6; padding: 10px; background-color: transparent;")
             self.button.setEnabled(False)  # 処理中はボタン無効
             self._set_button_content(text="...")
-            self.button_instruction.setText("ワセクラが処理中です... しばらくお待ちください")
+            self._set_button_instruction_text("ワセクラが処理中です... しばらくお待ちください")
             self._update_button_disabled_style()
             # 処理中は音声レベル表示を停止
             self.stop_audio_stream()
@@ -410,7 +539,7 @@ class ChatUI(QtWidgets.QWidget):
             self.status_text.setStyleSheet("font-size: 20px; color: #9b59b6; padding: 10px; background-color: transparent;")
             self.button.setEnabled(False)  # 処理中はボタン無効
             self._set_button_content(text="...")
-            self.button_instruction.setText("ワセクラが処理中です... しばらくお待ちください")
+            self._set_button_instruction_text("ワセクラが処理中です... しばらくお待ちください")
             self._update_button_disabled_style()
             # 処理中は音声レベル表示を停止
             self.stop_audio_stream()
@@ -422,9 +551,9 @@ class ChatUI(QtWidgets.QWidget):
             self.button.setEnabled(True)  # 待機中はボタン有効
             self._set_button_content(icon=self.mic_icon, text="マイク")
             if self.is_first_interaction:
-                self.button_instruction.setText("ボタンを押して「こんにちは」と話してみよう！")
+                self._set_button_instruction_text("ボタンを押して「こんにちは」と話してみよう！")
             else:
-                self.button_instruction.setText("クリックして話しかけてください")
+                self._set_button_instruction_text("クリックして話しかけてください")
             self._restore_normal_button_style()
             # 待機中は音声レベル表示を停止
             self.stop_audio_stream()
@@ -436,12 +565,39 @@ class ChatUI(QtWidgets.QWidget):
             self.button.setEnabled(True)  # 通常時はボタン有効
             self._set_button_content(icon=self.mic_icon, text="話す!")
             if self.is_first_interaction:
-                self.button_instruction.setText("ボタンを押して「こんにちは」と話しかけてね")
+                self._set_button_instruction_text("ボタンを押して「こんにちは」と話しかけてね")
             else:
-                self.button_instruction.setText("ボタンを押して話しかけてください")
+                self._set_button_instruction_text("ボタンを押して話しかけてください")
             self._restore_normal_button_style()
             # 通常待機中は音声レベル表示を停止
             self.stop_audio_stream()
+        
+        # 状態変化をチェックして画像表示を制御
+        current_status = self._get_current_status()
+        if (self.previous_status != "waiting" and current_status == "waiting" 
+            and hasattr(self.chatbot, 'current_question_count') 
+            and self.chatbot.current_question_count > 1):  # 挨拶後の質問から
+            # AI発話後の録音待機状態になったときに画像を表示
+            self.show_random_club_image()
+        
+        self.previous_status = current_status
+
+    def _get_current_status(self):
+        """現在の状態を文字列で返す"""
+        if self.clubs_displayed:
+            return "completed"
+        elif self.chatbot.is_recording:
+            return "recording"
+        elif hasattr(self.chatbot, "is_speaking") and self.chatbot.is_speaking:
+            return "speaking"
+        elif hasattr(self.chatbot, "is_processing") and self.chatbot.is_processing:
+            return "processing"
+        elif self.is_processing_after_recording:
+            return "processing"
+        elif self.chatbot.is_listening and not self.chatbot.is_recording:
+            return "waiting"
+        else:
+            return "waiting"
 
     def _update_button_disabled_style(self):
         """ボタンが無効な時のスタイルを設定"""
@@ -467,8 +623,9 @@ class ChatUI(QtWidgets.QWidget):
         pass
 
     def _reset_app(self):
-        """アプリをリーセットする"""
+        """アプリをリセットして初期状態に戻す"""
         self._restore_normal_button_style()
+
         self.clubs_displayed=False
         self.chatbot.running=False
         self.is_first_interaction=True
@@ -498,14 +655,14 @@ class ChatUI(QtWidgets.QWidget):
             # 録音開始時に即座にボタンと説明文を同時に変更（ラグを防ぐため）
             self._set_button_content(text="STOP")
             self._update_recording_button_style()
-            self.button_instruction.setText("録音を停止するにはボタンをクリックしてください")
+            self._set_button_instruction_text("録音を停止するにはボタンをクリックしてください")
             
             self.chatbot.start_recording()
         else:
             # 録音停止時も即座にボタンと説明文を変更
             self._set_button_content(text="...")
             self._update_button_disabled_style()
-            self.button_instruction.setText("ワセクラが処理中です... しばらくお待ちください")
+            self._set_button_instruction_text("ワセクラが処理中です... しばらくお待ちください")
             
             # 録音停止（update_statusメソッドが自動的に適切な状態に更新）
             self.chatbot.stop_recording()
@@ -753,6 +910,15 @@ class ChatUI(QtWidgets.QWidget):
         """外部からサークルデータを受信し、Signalを発行"""
         print(f"[UI DEBUG] receive_club_data called with {len(clubs)} clubs")
         self.club_data_received.emit(clubs)
+
+    def resizeEvent(self, event):
+        """ウィンドウサイズ変更時に画像位置を調整"""
+        super().resizeEvent(event)
+        
+        # 表示中の画像の位置を再調整
+        for i, widget in enumerate(self.displayed_image_widgets):
+            if i < len(self.used_positions):
+                self.position_image_widget(widget, self.used_positions[i])
 
     def closeEvent(self, event):
         """ウィンドウが閉じられたときに音声レベル表示を停止"""
